@@ -7,9 +7,15 @@ type DidChangeTextDocumentNotification struct {
 
 type DidChangeTextDocumentParams struct {
 	TextDocument   VersionTextDocumentIdentifier    `json:"textDocument"`
-	ContentChanges []TextDocumentContentChangeEvent `json:"ContentChanges"`
+	ContentChanges []TextDocumentContentChangeEvent `json:"contentChanges"`
 }
 
 type TextDocumentContentChangeEvent struct {
-	Text string `json:"text"`
+	Range TextDocumentContentChangeEventRange `json:"range"`
+	Text  string                              `json:"text"`
+}
+
+type TextDocumentContentChangeEventRange struct {
+	Start TextDocumentPosition `json:"start"`
+	End   TextDocumentPosition `json:"end"`
 }
