@@ -11,6 +11,16 @@ type TextDocumentIdentifier struct {
 	URI string `json:"uri"`
 }
 
+type TextDocumentPosition struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+type TextDocumentPositionParams struct {
+	TextDocument TextDocumentIdentifier `json:"textDocument"`
+	Position     TextDocumentPosition   `json:"position"`
+}
+
 type VersionTextDocumentIdentifier struct {
 	TextDocumentIdentifier
 	Version int `json:"version"`
