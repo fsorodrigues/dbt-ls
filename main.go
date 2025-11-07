@@ -12,6 +12,7 @@ import (
 	"dbt_lsp/rpc"
 
 	"github.com/charmbracelet/log"
+	"github.com/fsnotify/fsnotify"
 )
 
 func handleMessage(logger *log.Logger, state analysis.State, method string, contents []byte) {
@@ -89,6 +90,12 @@ func main() {
 
 	writer := os.Stdout
 	logger.Debug("Writer started")
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		logger.Errorf("Error starting the Watcher. %s", err)
+		log.Fatal(err)
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(rpc.Split)
