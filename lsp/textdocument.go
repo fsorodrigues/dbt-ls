@@ -16,6 +16,11 @@ type TextDocumentPosition struct {
 	Character int `json:"character"`
 }
 
+type TextDocumentPositionRange struct {
+	Start TextDocumentPosition `json:"start"`
+	End   TextDocumentPosition `json:"end"`
+}
+
 type TextDocumentPositionParams struct {
 	TextDocument TextDocumentIdentifier `json:"textDocument"`
 	Position     TextDocumentPosition   `json:"position"`
