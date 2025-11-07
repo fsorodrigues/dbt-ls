@@ -9,10 +9,17 @@ type CompletionRequest struct {
 	Params CompletionParams `json:"params"`
 }
 
+type CompletionTextEdit struct {
+	Range   TextDocumentPositionRange `json:"range"`
+	NewText string                    `json:"newText"`
+}
+
 type CompletionItem struct {
-	Label         string `json:"label"`
-	Detail        string `json:"detail"`
-	Documentation string `json:"documentation"`
+	Label         string             `json:"label"`
+	Detail        string             `json:"detail"`
+	Kind          int                `json:"kind"`
+	Documentation string             `json:"documentation"`
+	TextEdit      CompletionTextEdit `json:"textEdit"`
 }
 
 type CompletionList struct {

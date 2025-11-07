@@ -6,8 +6,14 @@ type (
 		Version string `json:"version"`
 	}
 
+	WorkspaceFolder struct {
+		URI  string `json:"uri"`
+		Name string `json:"name"`
+	}
+
 	InitializeRequestParams struct {
-		ClientInfo *ClientInfo `json:"clientInfo"`
+		ClientInfo       *ClientInfo       `json:"clientInfo"`
+		WorkspaceFolders []WorkspaceFolder `json:"workspaceFolders"`
 	}
 
 	InitializeRequest struct {
@@ -15,8 +21,19 @@ type (
 		Params InitializeRequestParams `json:"params"`
 	}
 
+	TextDocumentSyncCapability struct {
+		OpenClose bool `json:"openClose"`
+		Change    int  `json:"change"`
+		WillSave  bool `json:"willSave"`
+	}
+
+	CompletionProviderCapability struct {
+		TriggerCharacters []rune `json:"triggerCharacters"`
+	}
+
 	ServerCapabilities struct {
-		TextDocumentSync int `json:"textDocumentSync"`
+		TextDocumentSync   TextDocumentSyncCapability   `json:"textDocumentSync"`
+		CompletionProvider CompletionProviderCapability `json:"completionProvider"`
 	}
 
 	ServerInfo struct {
@@ -43,7 +60,14 @@ func NewInitializeResponse(id int) InitializeResponse {
 		},
 		Result: InitializeResult{
 			Capabilities: ServerCapabilities{
-				TextDocumentSync: 1,
+				TextDocumentSync: TextDocumentSyncCapability{
+					OpenClose: true,
+					WillSave:  true,
+					Change:    2,
+				},
+				CompletionProvider: CompletionProviderCapability{
+					TriggerCharacters: []rune("."),
+				},
 			},
 			ServerInfo: ServerInfo{
 				Name:    "dbt_lsp",

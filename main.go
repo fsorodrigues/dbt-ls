@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"dbt_lsp/analysis"
@@ -27,6 +28,13 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 		}
 
 		logger.Infof("InitializeRequest. Client: %s %s", request.Params.ClientInfo.Name, request.Params.ClientInfo.Version)
+		state.Root = request.Params.WorkspaceFolders
+		roots := make([]string, 0, len(state.Root))
+		for _, r := range state.Root {
+			dir := fmt.Sprintf("%s/models", r.Name)
+			roots = append(roots, dir)
+		}
+		state.ScanAndWatchDirs(roots)
 
 		msg := lsp.NewInitializeResponse(request.ID)
 		response, err := rpc.EncodeMsg(msg)
@@ -46,7 +54,7 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 			panic(err)
 		}
 
-		logger.Infof("DidOpenTextDocumentNotification. %s %s", request.Params.TextDocument.URI, request.Params.TextDocument.Text)
+		logger.Infof("DidOpenTextDocumentNotification. %s", request.Params.TextDocument.URI)
 		state.OpenDocument(request.Params.TextDocument.URI, request.Params.TextDocument.Text)
 
 	case "textDocument/didChange":
@@ -56,10 +64,39 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 			panic(err)
 		}
 
-		logger.Infof("DidChangeTextDocumentNotification. %s %s", request.Params.TextDocument.URI, request.Params.ContentChanges)
+		logger.Infof("DidChangeTextDocumentNotification. %s %v", request.Params.TextDocument.URI, request.Params.ContentChanges)
 		for _, change := range request.Params.ContentChanges {
-			state.OpenDocument(request.Params.TextDocument.URI, change.Text)
+			logger.Debugf("Received change notification: %s", contents)
+			state.UpdateDocument(request.Params.TextDocument.URI, change)
 		}
+
+	case "textDocument/willSave":
+		var request lsp.WillSaveTextDocumentNotification
+		if err := json.Unmarshal(contents, &request); err != nil {
+			logger.Errorf("Couldn't unmarshal contents for WillSaveTextDocumentNotification: %s", err)
+			panic(err)
+		}
+
+		logger.Infof("DidOpenTextDocumentNotification. %s %s", request.Params.TextDocument.URI, request.Params.TextDocument.Text)
+
+	case "textDocument/completion":
+		var request lsp.CompletionRequest
+		if err := json.Unmarshal(contents, &request); err != nil {
+			logger.Errorf("Couldn't unmarshal contents for CompletionRequest: %s", err)
+			panic(err)
+		}
+
+		logger.Infof("CompletionRequest. %s Line: %d, Char: %d", request.Params.TextDocument.URI, request.Params.Position.Line, request.Params.Position.Character)
+
+		msg := state.TextDocumentCodeCompletion(request.ID, request.Params)
+		response, err := rpc.EncodeMsg(msg)
+		if err != nil {
+			logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
+		}
+
+		logger.Infof("CompletionResponse. %s", response)
+
+		state.Writer.Write([]byte(response))
 	}
 }
 
@@ -83,8 +120,7 @@ func getLogger(filename string) (*log.Logger, error) {
 func main() {
 	logger, err := getLogger("/home/felipperodrigues/downloads/log.txt")
 	if err != nil {
-		logger.Error(err)
-		panic(err)
+		log.Fatal(err)
 	}
 	logger.Info("dbt LSP started")
 
@@ -99,8 +135,71 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(rpc.Split)
+	logger.Debug("Scanner started")
 
+	state := analysis.NewState(logger, writer, watcher)
+	logger.Debug("Server State initialized")
 
+	defer func() {
+		if state.Watcher != nil {
+			watcher.Close()
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case event := <-watcher.Events:
+				if event.Op&fsnotify.Create == fsnotify.Create {
+					logger.Infof("Watcher Create event: %s", event.Name)
+					info, err := os.Stat(event.Name)
+					if err == nil && info.IsDir() {
+						// New directory: scan and watch recursively
+						logger.Debugf("Found a new directory %s. Scanning it recursively.", event.Name)
+						state.ScanAndWatchDirs([]string{event.Name})
+					} else if filepath.Ext(event.Name) == ".r" {
+						logger.Debugf("Found a new file %s", event.Name)
+						// need to add function that adds model to index. this will be a
+						// refactored function that does what lines 108-109 in state.go does
+						state.AddNewModelToIndex(event.Name)
+					} else if err != nil {
+						logger.Errorf("Error in Create event: %s", err)
+					}
+				}
+				if event.Op&fsnotify.Remove == fsnotify.Remove {
+					logger.Debugf("Deletion Event %s", event.Name)
+					if filepath.Ext(event.Name) == state.DbtModelExtension {
+						state.RemoveModelFromIndex(event.Name)
+					}
+				}
+				if event.Op&fsnotify.Rename == fsnotify.Rename {
+					logger.Debugf("Renaming Event %s", event.Name)
+				}
+
+			case err := <-watcher.Errors:
+				logger.Errorf("Watcher error: %s", err.Error())
+				logger.Info("Attempting to restart the LSP")
+				watcher.Close()
+
+				newWatcher, err := fsnotify.NewWatcher()
+				if err != nil {
+					logger.Errorf("Error restarting the Watcher. Stopping the watcher functionality. %s", err)
+					state.Watcher = nil
+					break
+				}
+				state.Watcher = newWatcher
+				roots := make([]string, 0, len(state.Root))
+				for _, r := range state.Root {
+					dir := fmt.Sprintf("%s/models", r.Name)
+					roots = append(roots, dir)
+				}
+				state.ScanAndWatchDirs(roots)
+				logger.Info("Watcher restarted succesfully")
+			}
+		}
+	}()
+
+	logger.Debug("Scanning...")
 	for scanner.Scan() {
 		msg := scanner.Bytes()
 		method, contents, err := rpc.DecodeMsg(msg)
