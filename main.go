@@ -28,13 +28,13 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 		logger.Infof("InitializeRequest. Client: %s %s", request.Params.ClientInfo.Name, request.Params.ClientInfo.Version)
 
 		msg := lsp.NewInitializeResponse(request.ID)
-		reply, err := rpc.EncodeMsg(msg)
+		response, err := rpc.EncodeMsg(msg)
 		if err != nil {
 			logger.Errorf("Couldn't encode InitializeResponse: %s", err)
 			panic(err)
 		}
-		writer := os.Stdout
-		writer.Write([]byte(reply))
+
+		state.Writer.Write([]byte(response))
 
 		logger.Infof("Sent InitializeResponse id: %d", request.ID)
 
@@ -87,10 +87,12 @@ func main() {
 	}
 	logger.Info("dbt LSP started")
 
+	writer := os.Stdout
+	logger.Debug("Writer started")
+
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(rpc.Split)
 
-	state := analysis.NewState()
 
 	for scanner.Scan() {
 		msg := scanner.Bytes()
