@@ -140,64 +140,15 @@ func main() {
 	state := analysis.NewState(logger, writer, watcher)
 	logger.Debug("Server State initialized")
 
+	// ensures the watcher is closed, even if it has to be reinitialized by the
+	// WatchProject function error handling
 	defer func() {
 		if state.Watcher != nil {
 			watcher.Close()
 		}
 	}()
 
-	go func() {
-		for {
-			select {
-			case event := <-watcher.Events:
-				if event.Op&fsnotify.Create == fsnotify.Create {
-					logger.Infof("Watcher Create event: %s", event.Name)
-					info, err := os.Stat(event.Name)
-					if err == nil && info.IsDir() {
-						// New directory: scan and watch recursively
-						logger.Debugf("Found a new directory %s. Scanning it recursively.", event.Name)
-						state.ScanAndWatchDirs([]string{event.Name})
-					} else if filepath.Ext(event.Name) == ".r" {
-						logger.Debugf("Found a new file %s", event.Name)
-						// need to add function that adds model to index. this will be a
-						// refactored function that does what lines 108-109 in state.go does
-						state.AddNewModelToIndex(event.Name)
-					} else if err != nil {
-						logger.Errorf("Error in Create event: %s", err)
-					}
-				}
-				if event.Op&fsnotify.Remove == fsnotify.Remove {
-					logger.Debugf("Deletion Event %s", event.Name)
-					if filepath.Ext(event.Name) == state.DbtModelExtension {
-						state.RemoveModelFromIndex(event.Name)
-					}
-				}
-				if event.Op&fsnotify.Rename == fsnotify.Rename {
-					logger.Debugf("Renaming Event %s", event.Name)
-				}
-
-			case err := <-watcher.Errors:
-				logger.Errorf("Watcher error: %s", err.Error())
-				logger.Info("Attempting to restart the LSP")
-				watcher.Close()
-
-				newWatcher, err := fsnotify.NewWatcher()
-				if err != nil {
-					logger.Errorf("Error restarting the Watcher. Stopping the watcher functionality. %s", err)
-					state.Watcher = nil
-					break
-				}
-				state.Watcher = newWatcher
-				roots := make([]string, 0, len(state.Root))
-				for _, r := range state.Root {
-					dir := fmt.Sprintf("%s/models", r.Name)
-					roots = append(roots, dir)
-				}
-				state.ScanAndWatchDirs(roots)
-				logger.Info("Watcher restarted succesfully")
-			}
-		}
-	}()
+	go state.WatchProject()
 
 	logger.Debug("Scanning...")
 	for scanner.Scan() {
