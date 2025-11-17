@@ -38,7 +38,7 @@ func NewState(logger *log.Logger, writer io.Writer, watcher *fsnotify.Watcher) S
 	return State{
 		Documents:         map[string]*Document{},
 		DbtModels:         models,
-		DbtModelExtension: ".r",
+		DbtModelExtension: ".sql",
 		Logger:            logger,
 		Writer:            writer,
 		Watcher:           watcher,
