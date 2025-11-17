@@ -3,12 +3,12 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
-	"time"
 
 	"dbt_lsp/analysis"
+	"dbt_lsp/logger"
 	"dbt_lsp/lsp"
 	"dbt_lsp/rpc"
 
@@ -100,25 +100,12 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 	}
 }
 
-func getLogger(filename string) (*log.Logger, error) {
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o666)
-	if err != nil {
-		return nil, fmt.Errorf("Error creating the logger: %s", err)
-	}
-
-	logger := log.NewWithOptions(file, log.Options{
-		ReportCaller:    true,
-		ReportTimestamp: true,
-		TimeFormat:      time.Kitchen,
-		Level:           log.DebugLevel,
-		Prefix:          "[dbt_lsp]",
-	})
-
-	return logger, nil
-}
-
 func main() {
-	logger, err := getLogger("/home/felipperodrigues/downloads/log.txt")
+	var logFileFlag string
+	flag.StringVar(&logFileFlag, "log-file", "", "Path to log file")
+	flag.Parse()
+
+	logger, err := logger.GetLogger(logFileFlag)
 	if err != nil {
 		log.Fatal(err)
 	}
