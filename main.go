@@ -54,7 +54,7 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 			panic(err)
 		}
 
-		logger.Infof("DidOpenTextDocumentNotification. %s", request.Params.TextDocument.URI)
+		logger.Debugf("DidOpenTextDocumentNotification. %s", request.Params.TextDocument.URI)
 		state.OpenDocument(request.Params.TextDocument.URI, request.Params.TextDocument.Text)
 
 	case "textDocument/didChange":
@@ -64,7 +64,7 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 			panic(err)
 		}
 
-		logger.Infof("DidChangeTextDocumentNotification. %s %v", request.Params.TextDocument.URI, request.Params.ContentChanges)
+		logger.Debugf("DidChangeTextDocumentNotification. %s %v", request.Params.TextDocument.URI, request.Params.ContentChanges)
 		for _, change := range request.Params.ContentChanges {
 			logger.Debugf("Received change notification: %s", contents)
 			state.UpdateDocument(request.Params.TextDocument.URI, change)
@@ -77,7 +77,7 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 			panic(err)
 		}
 
-		logger.Infof("DidOpenTextDocumentNotification. %s %s", request.Params.TextDocument.URI, request.Params.TextDocument.Text)
+		logger.Debugf("DidOpenTextDocumentNotification. %s %s", request.Params.TextDocument.URI, request.Params.TextDocument.Text)
 
 	case "textDocument/completion":
 		var request lsp.CompletionRequest
@@ -86,7 +86,7 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 			panic(err)
 		}
 
-		logger.Infof("CompletionRequest. %s Line: %d, Char: %d", request.Params.TextDocument.URI, request.Params.Position.Line, request.Params.Position.Character)
+		logger.Debugf("CompletionRequest. %s Line: %d, Char: %d", request.Params.TextDocument.URI, request.Params.Position.Line, request.Params.Position.Character)
 
 		msg := state.TextDocumentCodeCompletion(request.ID, request.Params)
 		response, err := rpc.EncodeMsg(msg)
@@ -94,7 +94,7 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 			logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
 		}
 
-		logger.Infof("CompletionResponse. %s", response)
+		logger.Debugf("CompletionResponse. %s", response)
 
 		state.Writer.Write([]byte(response))
 	}
@@ -102,10 +102,12 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 
 func main() {
 	var logFileFlag string
+	var logLevel string
 	flag.StringVar(&logFileFlag, "log-file", "", "Path to log file")
+	flag.StringVar(&logLevel, "log-level", "", "Set log level")
 	flag.Parse()
 
-	logger, err := logger.GetLogger(logFileFlag)
+	logger, err := logger.GetLogger(logFileFlag, logLevel)
 	if err != nil {
 		log.Fatal(err)
 	}

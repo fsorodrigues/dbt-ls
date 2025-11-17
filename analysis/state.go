@@ -178,7 +178,7 @@ func (s State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEv
 		s.Logger.Errorf("Error creating json from change.Range: %s", err)
 	}
 
-	s.Logger.Infof("Document %s updated.", uri)
+	s.Logger.Debugf("Document %s updated.", uri)
 	s.Logger.Debugf("Text: %s", change.Text)
 	s.Logger.Debugf("Text: %v", string(changeContents))
 	s.applyUpdate(doc, change)

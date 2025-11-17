@@ -36,17 +36,27 @@ func getLoggerWriter(flag string) (io.Writer, error) {
 	return file, nil
 }
 
-func GetLogger(flag string) (*log.Logger, error) {
-	w, err := getLoggerWriter(flag)
+func GetLogger(file, logLevel string) (*log.Logger, error) {
+	w, err := getLoggerWriter(file)
 	if err != nil {
 		return nil, err
+	}
+
+	var level log.Level
+	switch logLevel {
+	case "debug":
+		level = log.DebugLevel
+	case "info":
+		level = log.InfoLevel
+	default:
+		level = log.InfoLevel
 	}
 
 	logger := log.NewWithOptions(w, log.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
 		TimeFormat:      time.Kitchen,
-		Level:           log.DebugLevel,
+		Level:           level,
 		Prefix:          "[dbt_lsp]",
 	})
 
