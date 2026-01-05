@@ -16,19 +16,29 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-func handleMessage(logger *log.Logger, state analysis.State, method string, contents []byte) {
-	logger.Infof("Received message with method: %s", method)
-
+func isStateful(method string) bool {
 	switch method {
-	case "initialize":
-		var request lsp.InitializeRequest
-		if err := json.Unmarshal(contents, &request); err != nil {
-			logger.Errorf("Couldn't unmarshal contents for InitializeRequest: %s", err)
-			panic(err)
-		}
+	case "initialize",
+		"textDocument/didOpen",
+		"textDocument/didChange",
+		"textDocument/willSave":
+		return true
+	default:
+		return false
+	}
+}
 
-		logger.Infof("InitializeRequest. Client: %s %s", request.Params.ClientInfo.Name, request.Params.ClientInfo.Version)
-		state.Root = request.Params.WorkspaceFolders
+func (p *InitProgram) handleStatelessEnvelope(state analysis.State, envelope lsp.Envelope) {
+	p.handleEnvelope(state, envelope)
+}
+
+func (p *InitProgram) handleEnvelope(state analysis.State, envelope lsp.Envelope) {
+	switch envelope.Message.(type) {
+	case lsp.InitializeRequest:
+		msgIn := envelope.Message.(lsp.InitializeRequest)
+		p.Logger.Infof("InitializeRequest. Client: %s %s", msgIn.Params.ClientInfo.Name, msgIn.Params.ClientInfo.Version)
+
+		state.Root = msgIn.Params.WorkspaceFolders
 		roots := make([]string, 0, len(state.Root))
 		for _, r := range state.Root {
 			dir := fmt.Sprintf("%s/models", r.Name)
@@ -36,98 +46,157 @@ func handleMessage(logger *log.Logger, state analysis.State, method string, cont
 		}
 		state.ScanAndWatchDirs(roots)
 
-		msg := lsp.NewInitializeResponse(request.ID)
-		response, err := rpc.EncodeMsg(msg)
+		msgOut := lsp.NewInitializeResponse(msgIn.ID)
+		response, err := rpc.EncodeMsg(msgOut)
 		if err != nil {
-			logger.Errorf("Couldn't encode InitializeResponse: %s", err)
+			p.Logger.Errorf("Couldn't encode InitializeResponse: %s", err)
 			panic(err)
 		}
 
 		state.Writer.Write([]byte(response))
+		p.Logger.Infof("Sent InitializeResponse id: %d", msgIn.ID)
 
-		logger.Infof("Sent InitializeResponse id: %d", request.ID)
+	case lsp.DidOpenTextDocumentNotification:
+		msgIn := envelope.Message.(lsp.DidOpenTextDocumentNotification)
+		p.Logger.Debugf("DidOpenTextDocumentNotification. %s", msgIn.Params.TextDocument.URI)
+		state.OpenDocument(msgIn.Params.TextDocument.URI, msgIn.Params.TextDocument.Text, msgIn.Params.TextDocument.Version)
 
-	case "textDocument/didOpen":
-		var request lsp.DidOpenTextDocumentNotification
-		if err := json.Unmarshal(contents, &request); err != nil {
-			logger.Errorf("Couldn't unmarshal contents for DidOpenTextDocumentNotification: %s", err)
-			panic(err)
+	case lsp.DidChangeTextDocumentNotification:
+		msgIn := envelope.Message.(lsp.DidChangeTextDocumentNotification)
+		p.Logger.Debugf("DidChangeTextDocumentNotification. %s %v", msgIn.Params.TextDocument.URI, msgIn.Params.ContentChanges)
+		for _, change := range msgIn.Params.ContentChanges {
+			p.Logger.Debugf("Received change notification: %s", envelope.Contents)
+			state.UpdateDocument(msgIn.Params.TextDocument.URI, change, msgIn.Params.TextDocument.Version)
 		}
 
-		logger.Debugf("DidOpenTextDocumentNotification. %s", request.Params.TextDocument.URI)
-		state.OpenDocument(request.Params.TextDocument.URI, request.Params.TextDocument.Text)
+	case lsp.WillSaveTextDocumentNotification:
+		msgIn := envelope.Message.(lsp.WillSaveTextDocumentNotification)
+		// TODO
+		p.Logger.Debugf("WillSaveTextDocumentNotification. %s %s", msgIn.Params.TextDocument.URI, msgIn.Params.TextDocument.Text)
 
-	case "textDocument/didChange":
-		var request lsp.DidChangeTextDocumentNotification
-		if err := json.Unmarshal(contents, &request); err != nil {
-			logger.Errorf("Couldn't unmarshal contents for DidChangeTextDocumentNotification: %s", err)
-			panic(err)
-		}
+	case lsp.CompletionRequest:
+		msgIn := envelope.Message.(lsp.CompletionRequest)
 
-		logger.Debugf("DidChangeTextDocumentNotification. %s %v", request.Params.TextDocument.URI, request.Params.ContentChanges)
-		for _, change := range request.Params.ContentChanges {
-			logger.Debugf("Received change notification: %s", contents)
-			state.UpdateDocument(request.Params.TextDocument.URI, change)
-		}
+		p.Logger.Debugf("CompletionRequest. %s Line: %d, Char: %d", msgIn.Params.TextDocument.URI, msgIn.Params.Position.Line, msgIn.Params.Position.Character)
 
-	case "textDocument/willSave":
-		var request lsp.WillSaveTextDocumentNotification
-		if err := json.Unmarshal(contents, &request); err != nil {
-			logger.Errorf("Couldn't unmarshal contents for WillSaveTextDocumentNotification: %s", err)
-			panic(err)
-		}
-
-		logger.Debugf("DidOpenTextDocumentNotification. %s %s", request.Params.TextDocument.URI, request.Params.TextDocument.Text)
-
-	case "textDocument/completion":
-		var request lsp.CompletionRequest
-		if err := json.Unmarshal(contents, &request); err != nil {
-			logger.Errorf("Couldn't unmarshal contents for CompletionRequest: %s", err)
-			panic(err)
-		}
-
-		logger.Debugf("CompletionRequest. %s Line: %d, Char: %d", request.Params.TextDocument.URI, request.Params.Position.Line, request.Params.Position.Character)
-
-		msg := state.TextDocumentCodeCompletion(request.ID, request.Params)
+		msg := state.TextDocumentCodeCompletion(msgIn.ID, msgIn.Params)
 		response, err := rpc.EncodeMsg(msg)
 		if err != nil {
-			logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
+			p.Logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
 		}
 
-		logger.Debugf("CompletionResponse. %s", response)
+		p.Logger.Debugf("CompletionResponse. %s", response)
 
 		state.Writer.Write([]byte(response))
 	}
 }
 
+func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelope, error) {
+	p.Logger.Infof("Received message with method: %s", method)
+	var envelope lsp.Envelope
+	envelope.Method = method
+	envelope.Contents = contents
+
+	switch method {
+	case "initialize":
+		var request lsp.InitializeRequest
+		if err := json.Unmarshal(contents, &request); err != nil {
+			p.Logger.Errorf("Couldn't unmarshal contents for InitializeRequest: %s", err)
+			return lsp.Envelope{}, err
+		}
+
+		p.Logger.Debugf("Created envelope for request ID %d, method %s", request.ID, method)
+		envelope = lsp.Envelope{
+			Message: request,
+		}
+	case "textDocument/didOpen":
+		var notification lsp.DidOpenTextDocumentNotification
+		if err := json.Unmarshal(contents, &notification); err != nil {
+			p.Logger.Errorf("Couldn't unmarshal contents for DidOpenTextDocumentNotification: %s", err)
+			return lsp.Envelope{}, err
+		}
+
+		p.Logger.Debugf("Created envelope for notification method %s", method)
+		envelope = lsp.Envelope{
+			Message: notification,
+		}
+	case "textDocument/didChange":
+		var notification lsp.DidChangeTextDocumentNotification
+		if err := json.Unmarshal(contents, &notification); err != nil {
+			p.Logger.Errorf("Couldn't unmarshal contents for DidChangeTextDocumentNotification: %s", err)
+			return lsp.Envelope{}, err
+		}
+
+		p.Logger.Debugf("Created envelope for notification method %s", method)
+		envelope = lsp.Envelope{
+			Message: notification,
+		}
+	case "textDocument/willSave":
+		var notification lsp.WillSaveTextDocumentNotification
+		if err := json.Unmarshal(contents, &notification); err != nil {
+			p.Logger.Errorf("Couldn't unmarshal contents for WillSaveTextDocumentNotification: %s", err)
+			return lsp.Envelope{}, err
+		}
+
+		p.Logger.Debugf("Created envelope for notification method %s", method)
+		envelope = lsp.Envelope{
+			Message: notification,
+		}
+	case "textDocument/completion":
+		var request lsp.CompletionRequest
+		if err := json.Unmarshal(contents, &request); err != nil {
+			p.Logger.Errorf("Couldn't unmarshal contents for CompletionRequest: %s", err)
+			return lsp.Envelope{}, err
+		}
+
+		p.Logger.Debugf("Created envelope for notification method %s", method)
+		envelope = lsp.Envelope{
+			Message: request,
+		}
+	}
+
+	return envelope, nil
+}
+
+type InitProgram struct {
+	logFileFlag string
+	logLevel    string
+	Logger      *log.Logger
+}
+
+type Program interface {
+	handleEnvelope()
+	handleStatelessEnvelope()
+	parseEnvelope(string, []byte) lsp.Envelope
+}
+
 func main() {
-	var logFileFlag string
-	var logLevel string
-	flag.StringVar(&logFileFlag, "log-file", "", "Path to log file")
-	flag.StringVar(&logLevel, "log-level", "", "Set log level")
+	pgm := InitProgram{}
+	flag.StringVar(&pgm.logFileFlag, "log-file", "", "Path to log file")
+	flag.StringVar(&pgm.logLevel, "log-level", "", "Set log level")
 	flag.Parse()
 
-	logger, err := logger.GetLogger(logFileFlag, logLevel)
+	logger, err := logger.GetLogger(pgm.logFileFlag, pgm.logLevel)
 	if err != nil {
 		log.Fatal(err)
 	}
-	logger.Info("dbt LSP started")
+	pgm.Logger = logger
+	pgm.Logger.Info("dbt LSP started")
 
 	writer := os.Stdout
-	logger.Debug("Writer started")
+	pgm.Logger.Debug("Writer started")
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		logger.Errorf("Error starting the Watcher. %s", err)
-		log.Fatal(err)
+		pgm.Logger.Fatalf("Error starting the Watcher. %s", err)
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(rpc.Split)
-	logger.Debug("Scanner started")
+	pgm.Logger.Debug("Scanner started")
 
 	state := analysis.NewState(logger, writer, watcher)
-	logger.Debug("Server State initialized")
+	pgm.Logger.Debug("Server State initialized")
 
 	// ensures the watcher is closed, even if it has to be reinitialized by the
 	// WatchProject function error handling
@@ -139,14 +208,26 @@ func main() {
 
 	go state.WatchProject()
 
-	logger.Debug("Scanning...")
+	logger.Debug("Scanning Stdin for incoming messages")
 	for scanner.Scan() {
 		msg := scanner.Bytes()
 		method, contents, err := rpc.DecodeMsg(msg)
 		if err != nil {
-			logger.Error(err)
-			panic(err)
+			pgm.Logger.Errorf("Can't parse RPC message: %s", err)
+			continue
 		}
-		handleMessage(logger, state, method, contents)
+
+		envelope, err := pgm.parseEnvelope(method, contents)
+		if err != nil {
+			pgm.Logger.Errorf("Can't create envelope: %s", err)
+			continue
+		}
+
+		// Synchronous for state-changing, async for stateless
+		if isStateful(method) {
+			pgm.handleEnvelope(state, envelope)
+		} else {
+			go pgm.handleStatelessEnvelope(state, envelope)
+		}
 	}
 }

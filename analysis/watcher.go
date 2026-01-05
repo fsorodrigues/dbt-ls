@@ -15,26 +15,29 @@ func (s *State) WatchProject() {
 			if event.Op&fsnotify.Create == fsnotify.Create {
 				s.Logger.Infof("Watcher Create event: %s", event.Name)
 				info, err := os.Stat(event.Name)
-				if err == nil && info.IsDir() {
+				if filepath.Base(event.Name) == "4913" || filepath.Ext(event.Name) != s.DbtModelExtension {
+					// handle special error cases that have to do with nvim way of saving files
+					// this ignore when the file is name 4913 or when a file does not have the correct
+					// extension.
+					continue
+				} else if err == nil && info.IsDir() {
 					// New directory: scan and watch recursively
 					s.Logger.Debugf("Found a new directory %s. Scanning it recursively.", event.Name)
 					s.ScanAndWatchDirs([]string{event.Name})
-				} else if filepath.Ext(event.Name) == ".r" {
+				} else if filepath.Ext(event.Name) == s.DbtModelExtension {
 					s.Logger.Debugf("Found a new file %s", event.Name)
-					// need to add function that adds model to index. this will be a
-					// refactored function that does what lines 108-109 in s.go does
 					s.AddNewModelToIndex(event.Name)
 				} else if err != nil {
 					s.Logger.Errorf("Error in Create event: %s", err)
 				}
 			}
-			if event.Op&fsnotify.Remove == fsnotify.Remove {
+			if event.Op&fsnotify.Remove == fsnotify.Remove && filepath.Ext(event.Name) == s.DbtModelExtension {
 				s.Logger.Debugf("Deletion Event %s", event.Name)
 				if filepath.Ext(event.Name) == s.DbtModelExtension {
 					s.RemoveModelFromIndex(event.Name)
 				}
 			}
-			if event.Op&fsnotify.Rename == fsnotify.Rename {
+			if event.Op&fsnotify.Rename == fsnotify.Rename && filepath.Ext(event.Name) == s.DbtModelExtension {
 				s.Logger.Debugf("Renaming Event %s", event.Name)
 			}
 

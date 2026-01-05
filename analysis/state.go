@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"dbt_lsp/lsp"
 
@@ -20,11 +21,13 @@ import (
 type Document struct {
 	Data      *Rope
 	EditCount *int
+	Version   int
 }
 
 type State struct {
 	Documents         map[string]*Document
 	Root              []lsp.WorkspaceFolder
+	DbtModelsMu       sync.Mutex
 	DbtModels         *trie.Trie[string]
 	DbtModelExtension string
 	Logger            *log.Logger
@@ -54,11 +57,16 @@ func newCounter(x int) *int {
 }
 
 func (s *State) AddNewModelToIndex(file string) {
+	s.DbtModelsMu.Lock()
+	defer s.DbtModelsMu.Unlock()
 	s.Logger.Debugf("Adding file: %s", file)
 	s.DbtModels.Put(strings.TrimSuffix(filepath.Base(file), s.DbtModelExtension), file)
 }
 
 func (s *State) RemoveModelFromIndex(file string) {
+	s.DbtModelsMu.Lock()
+	defer s.DbtModelsMu.Unlock()
+	s.Logger.Debugf("Removing file: %s", file)
 	s.DbtModels.Remove(strings.TrimSuffix(filepath.Base(file), s.DbtModelExtension))
 }
 
@@ -120,13 +128,14 @@ func (s *State) ScanAndWatchDirs(roots []string) error {
 	return nil
 }
 
-func (s *State) OpenDocument(uri, text string) {
+func (s *State) OpenDocument(uri, text string, version int) {
 	s.Logger.Infof("Document %s opened", uri)
 	s.Logger.Debugf("Text contents on Open: %s", text)
 
 	s.Documents[uri] = &Document{
 		Data:      rope.New([]rune(text)),
 		EditCount: newCounter(0),
+		Version:   version,
 	}
 }
 
@@ -140,7 +149,7 @@ func (s *State) applyRemoval(doc *Document, startOffset, endOffset int) {
 	(*doc.EditCount)++
 }
 
-func (s *State) applyUpdate(doc *Document, change lsp.TextDocumentContentChangeEvent) {
+func (s *State) applyUpdate(doc *Document, change lsp.TextDocumentContentChangeEvent, version int) {
 	if *doc.EditCount > 200 {
 		doc.Data.Rebalance()
 	}
@@ -168,10 +177,13 @@ func (s *State) applyUpdate(doc *Document, change lsp.TextDocumentContentChangeE
 		s.applyRemoval(doc, startOffset, endOffset)
 	}
 
+	doc.Version = version
+
+	s.Logger.Debugf("New version on Update: %d", doc.Version)
 	s.Logger.Debugf("Text contents on Update: %s", string(doc.Data.Value()))
 }
 
-func (s State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEvent) {
+func (s State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEvent, version int) {
 	doc := s.Documents[uri]
 	changeContents, err := json.Marshal(change.Range)
 	if err != nil {
@@ -181,7 +193,7 @@ func (s State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEv
 	s.Logger.Debugf("Document %s updated.", uri)
 	s.Logger.Debugf("Text: %s", change.Text)
 	s.Logger.Debugf("Text: %v", string(changeContents))
-	s.applyUpdate(doc, change)
+	s.applyUpdate(doc, change, version)
 }
 
 func (s State) TextDocumentCodeCompletion(id int, completion lsp.CompletionParams) lsp.CompletionResponse {
