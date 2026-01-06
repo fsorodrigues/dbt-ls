@@ -6,7 +6,7 @@ import (
 
 type Rope = rope.Node[rune]
 
-func getOffset(r *rope.Node[rune], targetLine, targetChar int) int {
+func getOffset(r *Rope, targetLine, targetChar int) int {
 	offset := 0
 	line := 0
 	char := 0
