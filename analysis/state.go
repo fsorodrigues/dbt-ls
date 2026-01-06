@@ -81,6 +81,41 @@ func extractRefPrefix(text string) (string, bool) {
 	return match[1], true
 }
 
+func extractModelRefUnderCursor(lineContent string, position lsp.TextDocumentPosition) (string, bool) {
+	// Group 1: Matches content inside single quotes
+	// Group 2: Matches content inside double quotes
+	re := regexp.MustCompile(`ref\s*\(\s*(?:'([^']+)'|"([^"]+)")\s*\)`)
+	matches := re.FindAllStringSubmatchIndex(lineContent, -1)
+
+	var modelName string
+	foundMatch := false
+
+	// match indices reference:
+	// match[0], match[1]: Start/End of full match
+	// match[2], match[3]: Start/End of group 1 (single quotes, -1 if no match)
+	// match[4], match[5]: Start/End of group 2 (double quotes, -1 if no match)
+	for _, match := range matches {
+		start, end := match[0], match[1]
+
+		// Check if cursor is within the bounds of this ref(...) call
+		if start <= position.Character && position.Character <= end {
+			if match[2] != -1 {
+				modelName = lineContent[match[2]:match[3]]
+			} else if match[4] != -1 {
+				modelName = lineContent[match[4]:match[5]]
+			}
+			foundMatch = true
+			break
+		}
+	}
+
+	return modelName, foundMatch
+}
+
+func constructRefAsUri(s string) string {
+	return fmt.Sprintf("file://%s", s)
+}
+
 func (s *State) findFilesRecursive(root string, ext string) ([]string, error) {
 	s.Logger.Debugf("Starting recursive search on %s", root)
 	var matchingFiles []string
@@ -183,7 +218,7 @@ func (s *State) applyUpdate(doc *Document, change lsp.TextDocumentContentChangeE
 	s.Logger.Debugf("Text contents on Update: %s", string(doc.Data.Value()))
 }
 
-func (s State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEvent, version int) {
+func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEvent, version int) {
 	doc := s.Documents[uri]
 	changeContents, err := json.Marshal(change.Range)
 	if err != nil {
@@ -196,9 +231,9 @@ func (s State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEv
 	s.applyUpdate(doc, change, version)
 }
 
-func (s State) TextDocumentCodeCompletion(id int, completion lsp.CompletionParams) lsp.CompletionResponse {
-	doc := s.Documents[completion.TextDocument.URI]
-	offset := getOffset(doc.Data, completion.Position.Line, completion.Position.Line)
+func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) lsp.CompletionResponse {
+	doc := s.Documents[params.TextDocument.URI]
+	offset := getOffset(doc.Data, params.Position.Line, params.Position.Character)
 	hunk := doc.Data.Slice(max(0, offset-10), min(offset+10, doc.Data.Len()))
 	prefix, check := extractRefPrefix(string(hunk))
 
@@ -228,8 +263,8 @@ func (s State) TextDocumentCodeCompletion(id int, completion lsp.CompletionParam
 				Documentation: modVal,
 				TextEdit: lsp.CompletionTextEdit{
 					Range: lsp.TextDocumentPositionRange{
-						Start: completion.Position,
-						End:   completion.Position,
+						Start: params.Position,
+						End:   params.Position,
 					},
 					NewText: strings.TrimPrefix(modKey, prefix),
 				},
@@ -237,6 +272,43 @@ func (s State) TextDocumentCodeCompletion(id int, completion lsp.CompletionParam
 		}
 
 		s.Logger.Debugf("TextDocumentCodeCompletion ready. Contains %d items", len(response.Result.Items))
+	}
+
+	return response
+}
+
+func (s *State) TextDocumentGoToDefinition(id int, params lsp.DefinitionParams) lsp.DefinitionResponse {
+	doc := s.Documents[params.TextDocument.URI]
+	line := getLine(doc.Data, params.Position.Line)
+	s.Logger.Debugf("Looking for prefix with model reference in line %s", line)
+	modelRef, check := extractModelRefUnderCursor(string(line), params.Position)
+
+	response := lsp.DefinitionResponse{
+		Response: lsp.Response{
+			RPC: "2.0",
+			ID:  &id,
+		},
+	}
+
+	if check {
+		s.Logger.Debugf("Found model reference %s in line", modelRef)
+		model, ok := s.DbtModels.Get(modelRef)
+		if ok {
+			response.Result = &lsp.DefinitionLocation{
+				TextDocumentIdentifier: lsp.TextDocumentIdentifier{
+					URI: constructRefAsUri(model),
+				},
+				Range: lsp.TextDocumentPositionRange{
+					Start: lsp.TextDocumentPosition{Line: 0, Character: 0},
+					End:   lsp.TextDocumentPosition{Line: 0, Character: 0},
+				},
+			}
+		} else {
+			s.Logger.Errorf("No model with prefix %s found", modelRef)
+		}
+
+	} else {
+		s.Logger.Errorf("No ref prefix found on line: %s", line)
 	}
 
 	return response

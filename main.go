@@ -88,6 +88,20 @@ func (p *InitProgram) handleEnvelope(state analysis.State, envelope lsp.Envelope
 		p.Logger.Debugf("CompletionResponse. %s", response)
 
 		state.Writer.Write([]byte(response))
+
+	case lsp.DefinitionRequest:
+		msgIn := envelope.Message.(lsp.DefinitionRequest)
+
+		p.Logger.Debugf("DefinitionRequest. %s Line: %d, Char: %d", msgIn.Params.TextDocument.URI, msgIn.Params.Position.Line, msgIn.Params.Position.Character)
+
+		msg := state.TextDocumentGoToDefinition(msgIn.ID, msgIn.Params)
+		response, err := rpc.EncodeMsg(msg)
+		if err != nil {
+			p.Logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
+		}
+
+		p.Logger.Debugf("CompletionResponse. %s", response)
+		state.Writer.Write([]byte(response))
 	}
 }
 
@@ -146,6 +160,18 @@ func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelop
 		var request lsp.CompletionRequest
 		if err := json.Unmarshal(contents, &request); err != nil {
 			p.Logger.Errorf("Couldn't unmarshal contents for CompletionRequest: %s", err)
+			return lsp.Envelope{}, err
+		}
+
+		p.Logger.Debugf("Created envelope for notification method %s", method)
+		envelope = lsp.Envelope{
+			Message: request,
+		}
+
+	case "textDocument/definition":
+		var request lsp.DefinitionRequest
+		if err := json.Unmarshal(contents, &request); err != nil {
+			p.Logger.Errorf("Couldn't unmarshal contents for DefinitionRequest: %s", err)
 			return lsp.Envelope{}, err
 		}
 

@@ -31,9 +31,14 @@ type (
 		TriggerCharacters []rune `json:"triggerCharacters"`
 	}
 
+	DefinitionClientCapability struct {
+		WorkDoneProgress bool `json:"workDoneProgress"`
+	}
+
 	ServerCapabilities struct {
 		TextDocumentSync   TextDocumentSyncCapability   `json:"textDocumentSync"`
 		CompletionProvider CompletionProviderCapability `json:"completionProvider"`
+		DefinitionProvider DefinitionClientCapability   `json:"definitionProvider"`
 	}
 
 	ServerInfo struct {
@@ -67,6 +72,9 @@ func NewInitializeResponse(id int) InitializeResponse {
 				},
 				CompletionProvider: CompletionProviderCapability{
 					TriggerCharacters: []rune("."),
+				},
+				DefinitionProvider: DefinitionClientCapability{
+					WorkDoneProgress: false,
 				},
 			},
 			ServerInfo: ServerInfo{
