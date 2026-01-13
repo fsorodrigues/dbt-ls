@@ -142,7 +142,7 @@ func (s *State) findFilesRecursive(root string, ext string) ([]string, error) {
 
 func (s *State) ScanAndWatchDirs(roots []string) error {
 	s.Logger.Infof(
-		"Starting scan on project. Looking and watching for models with extension %s",
+		"Starting scan. Looking and watching for models with extension %s",
 		s.DbtModelExtension,
 	)
 	for _, dir := range roots {
@@ -165,7 +165,6 @@ func (s *State) ScanAndWatchDirs(roots []string) error {
 
 func (s *State) OpenDocument(uri, text string, version int) {
 	s.Logger.Infof("Document %s opened", uri)
-	s.Logger.Debugf("Text contents on Open: %s", text)
 
 	s.Documents[uri] = &Document{
 		Data:      rope.New([]rune(text)),
@@ -215,7 +214,6 @@ func (s *State) applyUpdate(doc *Document, change lsp.TextDocumentContentChangeE
 	doc.Version = version
 
 	s.Logger.Debugf("New version on Update: %d", doc.Version)
-	s.Logger.Debugf("Text contents on Update: %s", string(doc.Data.Value()))
 }
 
 func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEvent, version int) {
@@ -233,9 +231,9 @@ func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeE
 
 func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) lsp.CompletionResponse {
 	doc := s.Documents[params.TextDocument.URI]
-	offset := getOffset(doc.Data, params.Position.Line, params.Position.Character)
-	hunk := doc.Data.Slice(max(0, offset-10), min(offset+10, doc.Data.Len()))
-	prefix, check := extractRefPrefix(string(hunk))
+	line := getLine(doc.Data, params.Position.Line)
+	modelRef, check := extractModelRefUnderCursor(string(line), params.Position)
+	s.Logger.Debugf("Check: %t. Search: %s. Models: %+v", check, modelRef, s.DbtModels)
 
 	response := lsp.CompletionResponse{
 		Response: lsp.Response{
@@ -249,12 +247,12 @@ func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) 
 	}
 
 	if check {
-		models := s.DbtModels.KeysWithPrefix(prefix)
-		s.Logger.Debugf("%s", models)
+		models := s.DbtModels.KeysWithPrefix(modelRef)
+		s.Logger.Debugf("Found: %s", models)
 		for _, modKey := range models {
 			modVal, ok := s.DbtModels.Get(modKey)
 			if !ok {
-				s.Logger.Debug("Error getting value from Trie")
+				s.Logger.Error("Error getting value from Trie")
 			}
 			response.Result.Items = append(response.Result.Items, lsp.CompletionItem{
 				Label:         modKey,
@@ -266,7 +264,7 @@ func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) 
 						Start: params.Position,
 						End:   params.Position,
 					},
-					NewText: strings.TrimPrefix(modKey, prefix),
+					NewText: strings.TrimPrefix(modKey, modelRef),
 				},
 			})
 		}
