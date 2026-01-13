@@ -28,11 +28,11 @@ func isStateful(method string) bool {
 	}
 }
 
-func (p *InitProgram) handleStatelessEnvelope(state analysis.State, envelope lsp.Envelope) {
+func (p *InitProgram) handleStatelessEnvelope(state *analysis.State, envelope lsp.Envelope) {
 	p.handleEnvelope(state, envelope)
 }
 
-func (p *InitProgram) handleEnvelope(state analysis.State, envelope lsp.Envelope) {
+func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelope) {
 	switch envelope.Message.(type) {
 	case lsp.InitializeRequest:
 		msgIn := envelope.Message.(lsp.InitializeRequest)

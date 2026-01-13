@@ -35,10 +35,10 @@ type State struct {
 	Watcher           *fsnotify.Watcher
 }
 
-func NewState(logger *log.Logger, writer io.Writer, watcher *fsnotify.Watcher) State {
+func NewState(logger *log.Logger, writer io.Writer, watcher *fsnotify.Watcher) *State {
 	models := trie.New[string]()
 
-	return State{
+	return &State{
 		Documents:         map[string]*Document{},
 		DbtModels:         models,
 		DbtModelExtension: ".sql",
