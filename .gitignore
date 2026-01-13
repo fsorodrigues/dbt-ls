@@ -1,2 +1,4 @@
 *.sql
 bin/
+log/
+internal/
