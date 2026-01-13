@@ -15,7 +15,8 @@ func (s *State) WatchProject() {
 			if event.Op&fsnotify.Create == fsnotify.Create {
 				s.Logger.Infof("Watcher Create event: %s", event.Name)
 				info, err := os.Stat(event.Name)
-				if filepath.Base(event.Name) == "4913" || filepath.Ext(event.Name) != s.DbtModelExtension {
+				if filepath.Base(event.Name) == "4913" || (err == nil && !info.IsDir() && filepath.Ext(event.Name) != s.DbtModelExtension) {
+					s.Logger.Debugf("ignoring event %s", event.Name)
 					// handle special error cases that have to do with nvim way of saving files
 					// this ignore when the file is name 4913 or when a file does not have the correct
 					// extension.
