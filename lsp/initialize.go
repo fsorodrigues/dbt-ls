@@ -78,7 +78,7 @@ func NewInitializeResponse(id int) InitializeResponse {
 				},
 			},
 			ServerInfo: ServerInfo{
-				Name:    "dbt_lsp",
+				Name:    "dbt_ls",
 				Version: "0.0",
 			},
 		},

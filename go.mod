@@ -1,4 +1,4 @@
-module dbt_lsp
+module dbt_ls
 
 go 1.25.1
 

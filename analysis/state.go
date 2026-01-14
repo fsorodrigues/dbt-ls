@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"dbt_lsp/lsp"
+	"dbt_ls/lsp"
 
 	"github.com/charmbracelet/log"
 	"github.com/fsnotify/fsnotify"

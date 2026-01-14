@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"os"
 
-	"dbt_lsp/analysis"
-	"dbt_lsp/logger"
-	"dbt_lsp/lsp"
-	"dbt_lsp/rpc"
+	"dbt_ls/analysis"
+	"dbt_ls/logger"
+	"dbt_ls/lsp"
+	"dbt_ls/rpc"
 
 	"github.com/charmbracelet/log"
 	"github.com/fsnotify/fsnotify"

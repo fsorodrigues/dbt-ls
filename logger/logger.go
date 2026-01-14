@@ -14,7 +14,7 @@ func getLoggerFilePath(flag string) (string, error) {
 		return flag, nil
 	}
 
-	if logPath := os.Getenv("DBT_LSP_LOG"); logPath != "" {
+	if logPath := os.Getenv("DBT_LS_LOG"); logPath != "" {
 		return logPath, nil
 	}
 
@@ -57,7 +57,7 @@ func GetLogger(file, logLevel string) (*log.Logger, error) {
 		ReportTimestamp: true,
 		TimeFormat:      time.Kitchen,
 		Level:           level,
-		Prefix:          "[dbt_lsp]",
+		Prefix:          "[dbt_ls]",
 	})
 
 	return logger, nil
