@@ -33,6 +33,17 @@ Enables "Go to Definition" functionality for dbt models. Triggering your
 editor's definition jump command while the cursor is on a model name inside a
 `ref('...')` macro will open the corresponding model's source file.
 
+To trigger the jump, you can use nvim's:
+
+```lua
+vim.lsp.buf.definition()
+```
+
+My personal config does this with a keymap that uses a Telescope command for the same effect:
+```lua
+vim.keymap.set("n", "gd", "<cmd>Telescope lsp_definitions<CR>", { desc = "..." })
+```
+
 ## Requirements
 
 - **Go**: >= 1.25
