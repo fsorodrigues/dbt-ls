@@ -27,6 +27,8 @@ dbt project for models (currently defaulting to `.sql` extension files) and
 maintains an index. When you are typing inside a `ref` call (e.g.,
 `ref('my_mod`)`), it suggests available models matching the input.
 
+![Model name complete suggestion when on ref tag](./docs/images/ref.gif)
+
 ### Jump to model from ref
 
 Enables "Go to Definition" functionality for dbt models. Triggering your
@@ -43,6 +45,8 @@ My personal config does this with a keymap that uses a Telescope command for the
 ```lua
 vim.keymap.set("n", "gd", "<cmd>Telescope lsp_definitions<CR>", { desc = "..." })
 ```
+
+![Go to definition of model under cursor](./docs/images/go-to-definition.gif)
 
 ## Requirements
 
