@@ -40,6 +40,9 @@ func (s *State) WatchProject() {
 			}
 			if event.Op&fsnotify.Rename == fsnotify.Rename && filepath.Ext(event.Name) == s.DbtModelExtension {
 				s.Logger.Debugf("Renaming Event %s", event.Name)
+				if filepath.Ext(event.Name) == s.DbtModelExtension {
+					s.RemoveModelFromIndex(event.Name)
+				}
 			}
 
 		case err := <-s.Watcher.Errors:
