@@ -13,7 +13,6 @@ import (
 	"dbt_ls/rpc"
 
 	"github.com/charmbracelet/log"
-	"github.com/fsnotify/fsnotify"
 )
 
 func isStateful(method string) bool {
@@ -212,27 +211,23 @@ func main() {
 	writer := os.Stdout
 	pgm.Logger.Debug("Writer started")
 
-	watcher, err := fsnotify.NewWatcher()
+	modelWatcher, err := analysis.NewWatcher("models", logger)
 	if err != nil {
-		pgm.Logger.Fatalf("Error starting the Watcher. %s", err)
+		pgm.Logger.Fatalf("Error starting the modelWatcher. %s", err)
 	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(rpc.Split)
 	pgm.Logger.Debug("Scanner started")
 
-	state := analysis.NewState(logger, writer, watcher)
+	state := analysis.NewState(logger, writer, modelWatcher.Watcher, configWatcher.Watcher)
 	pgm.Logger.Debug("Server State initialized")
 
 	// ensures the watcher is closed, even if it has to be reinitialized by the
 	// WatchProject function error handling
-	defer func() {
-		if state.Watcher != nil {
-			watcher.Close()
-		}
-	}()
+	defer modelWatcher.HandleAsyncClose(logger)
 
-	go state.WatchProject()
+	go state.WatchModels()
 
 	logger.Debug("Scanning Stdin for incoming messages")
 	for scanner.Scan() {

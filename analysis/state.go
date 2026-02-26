@@ -25,26 +25,28 @@ type Document struct {
 }
 
 type State struct {
-	Documents         map[string]*Document
-	Root              []lsp.WorkspaceFolder
-	DbtModelsMu       sync.Mutex
-	DbtModels         *trie.Trie[string]
-	DbtModelExtension string
-	Logger            *log.Logger
-	Writer            io.Writer
-	Watcher           *fsnotify.Watcher
+	Documents           map[string]*Document
+	Root                []lsp.WorkspaceFolder
+	DbtModelsMu         sync.Mutex
+	DbtModels           *trie.Trie[string]
+	DbtModelExtension   string
+	DbtConfigExtensions []string
+	Logger              *log.Logger
+	Writer              io.Writer
+	ModelWatcher        *fsnotify.Watcher
 }
 
-func NewState(logger *log.Logger, writer io.Writer, watcher *fsnotify.Watcher) *State {
+func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher *fsnotify.Watcher) *State {
 	models := trie.New[string]()
 
 	return &State{
-		Documents:         map[string]*Document{},
-		DbtModels:         models,
-		DbtModelExtension: ".sql",
-		Logger:            logger,
-		Writer:            writer,
-		Watcher:           watcher,
+		Documents:           map[string]*Document{},
+		DbtModels:           models,
+		DbtModelExtension:   ".sql",
+		DbtConfigExtensions: []string{".yml", ".yaml"},
+		Logger:              logger,
+		Writer:              writer,
+		ModelWatcher:        modelWatcher,
 	}
 }
 
@@ -126,8 +128,8 @@ func (s *State) findFilesRecursive(root string, ext string) ([]string, error) {
 			return err // Handle errors during traversal
 		}
 		if d.IsDir() {
-			s.Logger.Debugf("Found dir %s. Adding to Watcher", path)
-			s.Watcher.Add(path)
+			s.Logger.Debugf("Found dir %s. Adding to ModelWatcher", path)
+			s.ModelWatcher.Add(path)
 		} else if filepath.Ext(path) == ext {
 			s.Logger.Debugf("Found file %s. Selected for LSP indexing", path)
 			matchingFiles = append(matchingFiles, path)
