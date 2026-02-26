@@ -215,6 +215,10 @@ func main() {
 	if err != nil {
 		pgm.Logger.Fatalf("Error starting the modelWatcher. %s", err)
 	}
+	configWatcher, err := analysis.NewWatcher("config", logger)
+	if err != nil {
+		pgm.Logger.Fatalf("Error starting the configWatcher. %s", err)
+	}
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(rpc.Split)
@@ -226,8 +230,10 @@ func main() {
 	// ensures the watcher is closed, even if it has to be reinitialized by the
 	// WatchProject function error handling
 	defer modelWatcher.HandleAsyncClose(logger)
+	defer configWatcher.HandleAsyncClose(logger)
 
 	go state.WatchModels()
+	go state.WatchConfig()
 
 	logger.Debug("Scanning Stdin for incoming messages")
 	for scanner.Scan() {

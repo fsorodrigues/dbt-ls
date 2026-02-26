@@ -34,6 +34,7 @@ type State struct {
 	Logger              *log.Logger
 	Writer              io.Writer
 	ModelWatcher        *fsnotify.Watcher
+	ConfigWatcher       *fsnotify.Watcher
 }
 
 func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher *fsnotify.Watcher) *State {
@@ -47,6 +48,7 @@ func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher 
 		Logger:              logger,
 		Writer:              writer,
 		ModelWatcher:        modelWatcher,
+		ConfigWatcher:       configWatcher,
 	}
 }
 

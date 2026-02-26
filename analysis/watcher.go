@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/charmbracelet/log"
 	"github.com/fsnotify/fsnotify"
@@ -96,6 +97,44 @@ func (s *State) WatchModels() {
 			}
 			s.ScanAndWatchDirs(roots)
 			s.Logger.Info("ModelWatcher restarted succesfully")
+		}
+	}
+}
+
+func (s *State) WatchConfig() {
+	for {
+		select {
+		case event := <-s.ConfigWatcher.Events:
+			if event.Op&fsnotify.Create == fsnotify.Create {
+				s.Logger.Infof("ConfigWatcher Create event: %s", event.Name)
+				info, err := os.Stat(event.Name)
+				if filepath.Base(event.Name) == "4913" || (err == nil && !info.IsDir() && !slices.Contains(s.DbtConfigExtensions, filepath.Ext(event.Name))) {
+					s.Logger.Debugf("ConfigWatcher: ignoring event %s", event.Name)
+					// handle special error cases that have to do with nvim way of saving
+					// files this ignore when the file is name 4913 or when a file does
+					// not have the correct extension.
+					continue
+				} else if err == nil && info.IsDir() {
+					// New directory: scan and watch recursively
+					s.Logger.Debugf("ConfigWatcher: Found a new directory %s. Scanning it recursively.", event.Name)
+					s.ScanAndWatchDirs([]string{event.Name})
+				} else if filepath.Ext(event.Name) == s.DbtModelExtension {
+					s.Logger.Debugf("ConfigWatcher: Found a new file %s", event.Name)
+					s.AddNewModelToIndex(event.Name)
+				} else if err != nil {
+					s.Logger.Errorf("ConfigWatcher: Error in Create event: %s", err)
+				}
+			}
+
+			if event.Op&fsnotify.Remove == fsnotify.Remove && filepath.Ext(event.Name) == s.DbtModelExtension {
+				s.Logger.Infof("ConfigWatcher Deletion event: %s", event.Name)
+			}
+
+			if event.Op&fsnotify.Rename == fsnotify.Rename && filepath.Ext(event.Name) == s.DbtModelExtension {
+				s.Logger.Debugf("ConfigWatcher Renaming Event %s", event.Name)
+			}
+		case err := <-s.ConfigWatcher.Errors:
+			s.Logger.Errorf("ConfigWatcher error: %s", err.Error())
 		}
 	}
 }
