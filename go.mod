@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/log v0.4.2
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/zyedidia/generic v1.2.1
+	go.yaml.in/yaml/v4 v4.0.0-rc.4
 )
 
 require (
