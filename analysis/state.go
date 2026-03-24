@@ -13,7 +13,6 @@ import (
 	"dbt_ls/lsp"
 
 	"github.com/charmbracelet/log"
-	"github.com/fsnotify/fsnotify"
 	rope "github.com/zyedidia/generic/rope"
 	trie "github.com/zyedidia/generic/trie"
 )
@@ -33,11 +32,11 @@ type State struct {
 	DbtConfigExtensions []string
 	Logger              *log.Logger
 	Writer              io.Writer
-	ModelWatcher        *fsnotify.Watcher
-	ConfigWatcher       *fsnotify.Watcher
+	ModelWatcher        DbtWatcher
+	ConfigWatcher       DbtWatcher
 }
 
-func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher *fsnotify.Watcher) *State {
+func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher *DbtWatcher) *State {
 	models := trie.New[string]()
 
 	return &State{
@@ -47,8 +46,8 @@ func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher 
 		DbtConfigExtensions: []string{".yml", ".yaml"},
 		Logger:              logger,
 		Writer:              writer,
-		ModelWatcher:        modelWatcher,
-		ConfigWatcher:       configWatcher,
+		ModelWatcher:        *modelWatcher,
+		ConfigWatcher:       *configWatcher,
 	}
 }
 
