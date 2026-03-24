@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"os"
+	"path/filepath"
 
 	"dbt_ls/analysis"
 	"dbt_ls/logger"
@@ -38,12 +38,12 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		p.Logger.Infof("InitializeRequest. Client: %s %s", msgIn.Params.ClientInfo.Name, msgIn.Params.ClientInfo.Version)
 
 		state.Root = msgIn.Params.WorkspaceFolders
-		roots := make([]string, 0, len(state.Root))
 		for _, r := range state.Root {
-			dir := fmt.Sprintf("%s/models", r.Name)
-			roots = append(roots, dir)
+			modelsDir := filepath.Join(r.Name, state.ModelWatcher.Root)
+			state.ScanAndWatchDirs([]string{modelsDir}, state.FindModelFilesRecursive)
+			configDir := filepath.Join(r.Name, state.ConfigWatcher.Root)
+			state.ScanAndWatchDirs([]string{configDir}, state.FindConfigFilesRecursive)
 		}
-		state.ScanAndWatchDirs(roots)
 
 		msgOut := lsp.NewInitializeResponse(msgIn.ID)
 		response, err := rpc.EncodeMsg(msgOut)
@@ -211,11 +211,11 @@ func main() {
 	writer := os.Stdout
 	pgm.Logger.Debug("Writer started")
 
-	modelWatcher, err := analysis.NewWatcher("models", logger)
+	modelWatcher, err := analysis.NewWatcher("models", "./models", logger)
 	if err != nil {
 		pgm.Logger.Fatalf("Error starting the modelWatcher. %s", err)
 	}
-	configWatcher, err := analysis.NewWatcher("config", logger)
+	configWatcher, err := analysis.NewWatcher("config", "./", logger)
 	if err != nil {
 		pgm.Logger.Fatalf("Error starting the configWatcher. %s", err)
 	}
@@ -224,16 +224,16 @@ func main() {
 	scanner.Split(rpc.Split)
 	pgm.Logger.Debug("Scanner started")
 
-	state := analysis.NewState(logger, writer, modelWatcher.Watcher, configWatcher.Watcher)
+	state := analysis.NewState(logger, writer, modelWatcher, configWatcher)
 	pgm.Logger.Debug("Server State initialized")
 
 	// ensures the watcher is closed, even if it has to be reinitialized by the
 	// WatchProject function error handling
-	defer modelWatcher.HandleAsyncClose(logger)
 	defer configWatcher.HandleAsyncClose(logger)
+	defer modelWatcher.HandleAsyncClose(logger)
 
-	go state.WatchModels()
 	go state.WatchConfig()
+	go state.WatchModels()
 
 	logger.Debug("Scanning Stdin for incoming messages")
 	for scanner.Scan() {
