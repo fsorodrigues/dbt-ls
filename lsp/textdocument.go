@@ -16,6 +16,15 @@ type TextDocumentPosition struct {
 	Character int `json:"character"`
 }
 
+func (p *TextDocumentPosition) MoveChar(n int) TextDocumentPosition {
+	newPos := &TextDocumentPosition{
+		Line:      p.Line,
+		Character: p.Character + n,
+	}
+
+	return *newPos
+}
+
 type TextDocumentPositionRange struct {
 	Start TextDocumentPosition `json:"start"`
 	End   TextDocumentPosition `json:"end"`
