@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,6 +34,8 @@ type State struct {
 	SourcesValid        bool
 	SourceFileErrors    map[string][]string // keyed by file path; guarded by DbtConfigMu
 	NotifCh             chan lsp.ShowMessageNotification
+	configFileHashes    map[string]string // file path → sha256 of last-processed content
+	configFileHashesMu  sync.Mutex
 	Root                []lsp.WorkspaceFolder
 	DbtModelsMu         sync.Mutex
 	DbtModels           *trie.Trie[string]
@@ -54,6 +57,7 @@ func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher 
 		SourcesValid:        true,
 		SourceFileErrors:    map[string][]string{},
 		NotifCh:             make(chan lsp.ShowMessageNotification, 16),
+		configFileHashes:    map[string]string{},
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
 		DbtConfigExtensions: []string{".yml", ".yaml"},
@@ -188,6 +192,19 @@ func (s *State) ProcessNewConfigYaml(file string) {
 		s.Logger.Errorf("Error reading config file %s: %s", file, err)
 		return
 	}
+
+	// Deduplicate: skip if the file content hasn't changed since last parse.
+	// Neovim's atomic save fires several fsnotify events per save cycle; all of
+	// them read identical bytes, so only the first one should proceed.
+	hash := fmt.Sprintf("%x", sha256.Sum256(data))
+	s.configFileHashesMu.Lock()
+	if s.configFileHashes[file] == hash {
+		s.configFileHashesMu.Unlock()
+		s.Logger.Debugf("Config file %s unchanged (hash match). Skipping reparse.", file)
+		return
+	}
+	s.configFileHashes[file] = hash
+	s.configFileHashesMu.Unlock()
 
 	basename := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	if basename == "dbt_project" {
