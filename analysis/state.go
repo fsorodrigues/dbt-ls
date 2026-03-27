@@ -27,6 +27,8 @@ type Document struct {
 
 type State struct {
 	Documents           map[string]*Document
+	DbtConfigMu         sync.Mutex
+	DbtConfig           DbtConfig
 	Root                []lsp.WorkspaceFolder
 	DbtModelsMu         sync.Mutex
 	DbtModels           *trie.Trie[string]
@@ -77,6 +79,76 @@ func (s *State) RemoveModelFromIndex(file string) {
 	s.DbtModels.Remove(strings.TrimSuffix(filepath.Base(file), s.DbtModelExtension))
 }
 
+func (s *State) SetDbtProject(project DbtProject, file string) {
+	s.DbtConfigMu.Lock()
+	s.DbtConfig.Name = project.Name
+	s.assignDbtSourcesLocked(project.DbtSources, file)
+	s.DbtConfigMu.Unlock()
+}
+
+func (s *State) SetDbtSources(sources DbtSources, file string) {
+	s.DbtConfigMu.Lock()
+	s.assignDbtSourcesLocked(sources, file)
+	s.DbtConfigMu.Unlock()
+}
+
+func (s *State) assignDbtSourcesLocked(sources DbtSources, file string) {
+	if s.DbtConfig.Sources == nil {
+		s.DbtConfig.Sources = make(map[string]*DbtConfigSource)
+	}
+
+	s.Logger.Debugf("Adding DbtSources from %s", file)
+	for _, src := range sources.Sources {
+		s.Logger.Debugf("Attempting to add DbtSource %s from %s", src.Name, file)
+		s.mergeDbtSourcesLocked(src, file)
+	}
+}
+
+func addSourceFileToTables(tables []*DbtTable, file string) {
+	for _, tab := range tables {
+		tab.SourceFile = file
+	}
+}
+
+func (s *State) processDbtTablesLocked(srcName string, tables []*DbtTable, file string) {
+	existingTables := s.DbtConfig.Sources[srcName].Tables
+	for _, tab := range tables {
+		existing, ok := existingTables[tab.Name]
+		if ok && existing.SourceFile == file {
+			s.Logger.Debugf("Table %s from file %s already processed. Ignoring.", tab.Name, file)
+		} else if ok {
+			s.Logger.Errorf("Table %s already exists. Conflicting files: %s, %s", tab.Name, file, existing.SourceFile)
+		} else {
+			s.Logger.Debugf("Merging table %s from %s into existing config.", tab.Name, file)
+			existingTables[tab.Name] = tab
+		}
+	}
+}
+
+func (s *State) mergeDbtSourcesLocked(src *DbtSource, file string) {
+	addSourceFileToTables(src.Tables, file)
+
+	existing, ok := s.DbtConfig.Sources[src.Name]
+	if !ok {
+		s.Logger.Debugf("Source %s does not exist. Creating", src.Name)
+
+		existing = &DbtConfigSource{
+			Name:     src.Name,
+			Database: src.Database,
+			Schema:   src.Schema,
+			Tables:   make(map[string]*DbtTable),
+		}
+		for _, tab := range src.Tables {
+			existing.Tables[tab.Name] = tab
+		}
+
+		s.DbtConfig.Sources[src.Name] = existing
+	} else {
+		s.Logger.Debugf("Source %s already exists. Merging", src.Name)
+		s.processDbtTablesLocked(src.Name, src.Tables, file)
+	}
+}
+
 func (s *State) ProcessNewConfigYaml(file string) {
 	s.Logger.Debugf("Processing config file (adding step): %s", file)
 
@@ -91,10 +163,12 @@ func (s *State) ProcessNewConfigYaml(file string) {
 		project := DbtProject{}
 		s.Logger.Debugf("Unmarshaling dbt_project: %s", file)
 		yaml.Unmarshal(data, &project)
+		s.SetDbtProject(project, file)
 	} else {
 		sources := DbtSources{}
 		s.Logger.Debugf("Unmarshaling yml config file: %s", file)
 		yaml.Unmarshal(data, &sources)
+		s.SetDbtSources(sources, file)
 	}
 }
 
