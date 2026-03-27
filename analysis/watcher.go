@@ -131,6 +131,11 @@ func (s *State) WatchConfig() {
 				s.Logger.Infof("ConfigWatcher Deletion event: %s", event.Name)
 			}
 
+			if event.Op&fsnotify.Write == fsnotify.Write && slices.Contains(s.DbtConfigExtensions, filepath.Ext(event.Name)) {
+				s.Logger.Infof("ConfigWatcher Write event: %s", event.Name)
+				s.ProcessNewConfigYaml(event.Name)
+			}
+
 			if event.Op&fsnotify.Rename == fsnotify.Rename && slices.Contains(s.DbtConfigExtensions, filepath.Ext(event.Name)) {
 				s.Logger.Debugf("ConfigWatcher Renaming Event %s", event.Name)
 				_ = fmt.Sprintf("%s/models", "s")

@@ -57,6 +57,11 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 	s.DbtConfigMu.Lock()
 	defer s.DbtConfigMu.Unlock()
 
+	if !s.SourcesValid {
+		s.Logger.Debugf("Source config is invalid; skipping source completion")
+		return
+	}
+
 	switch ctx.Kind {
 	case "source_name":
 		prefix := ctx.SourceName

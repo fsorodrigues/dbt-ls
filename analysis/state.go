@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"dbt_ls/lsp"
+	"dbt_ls/rpc"
 
 	"github.com/charmbracelet/log"
 	rope "github.com/zyedidia/generic/rope"
@@ -29,6 +30,9 @@ type State struct {
 	Documents           map[string]*Document
 	DbtConfigMu         sync.Mutex
 	DbtConfig           DbtConfig
+	SourcesValid        bool
+	SourceFileErrors    map[string][]string // keyed by file path; guarded by DbtConfigMu
+	NotifCh             chan lsp.ShowMessageNotification
 	Root                []lsp.WorkspaceFolder
 	DbtModelsMu         sync.Mutex
 	DbtModels           *trie.Trie[string]
@@ -47,6 +51,9 @@ func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher 
 
 	return &State{
 		Documents:           map[string]*Document{},
+		SourcesValid:        true,
+		SourceFileErrors:    map[string][]string{},
+		NotifCh:             make(chan lsp.ShowMessageNotification, 16),
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
 		DbtConfigExtensions: []string{".yml", ".yaml"},
@@ -83,18 +90,37 @@ func (s *State) SetDbtProject(project DbtProject, file string) {
 	s.DbtConfigMu.Lock()
 	s.DbtConfig.Name = project.Name
 	s.assignDbtSourcesLocked(project.DbtSources, file)
+	errs := s.allSourceErrorsLocked()
+	s.SourcesValid = len(errs) == 0
 	s.DbtConfigMu.Unlock()
+
+	s.notifySourceState(errs)
 }
 
 func (s *State) SetDbtSources(sources DbtSources, file string) {
 	s.DbtConfigMu.Lock()
 	s.assignDbtSourcesLocked(sources, file)
+	errs := s.allSourceErrorsLocked()
+	s.SourcesValid = len(errs) == 0
 	s.DbtConfigMu.Unlock()
+
+	s.notifySourceState(errs)
 }
 
 func (s *State) assignDbtSourcesLocked(sources DbtSources, file string) {
 	if s.DbtConfig.Sources == nil {
 		s.DbtConfig.Sources = make(map[string]*DbtConfigSource)
+	}
+
+	// Clear this file's previous errors and remove its tables so a reload
+	// produces a clean slate (handles both fixes and removals correctly).
+	delete(s.SourceFileErrors, file)
+	for _, configSrc := range s.DbtConfig.Sources {
+		for tabName, tab := range configSrc.Tables {
+			if tab.SourceFile == file {
+				delete(configSrc.Tables, tabName)
+			}
+		}
 	}
 
 	s.Logger.Debugf("Adding DbtSources from %s", file)
@@ -117,7 +143,9 @@ func (s *State) processDbtTablesLocked(srcName string, tables []*DbtTable, file 
 		if ok && existing.SourceFile == file {
 			s.Logger.Debugf("Table %s from file %s already processed. Ignoring.", tab.Name, file)
 		} else if ok {
-			s.Logger.Errorf("Table %s already exists. Conflicting files: %s, %s", tab.Name, file, existing.SourceFile)
+			msg := fmt.Sprintf("Table %s already exists. Conflicting files: %s, %s", tab.Name, file, existing.SourceFile)
+			s.SourceFileErrors[file] = append(s.SourceFileErrors[file], msg)
+			s.Logger.Error(msg)
 		} else {
 			s.Logger.Debugf("Merging table %s from %s into existing config.", tab.Name, file)
 			existingTables[tab.Name] = tab
@@ -126,6 +154,9 @@ func (s *State) processDbtTablesLocked(srcName string, tables []*DbtTable, file 
 }
 
 func (s *State) mergeDbtSourcesLocked(src *DbtSource, file string) {
+	// Always stamp SourceFile on the incoming tables before any branch so
+	// that the idempotency guard in processDbtTablesLocked (existing.SourceFile == file)
+	// and the clear-on-reload logic in assignDbtSourcesLocked both work correctly.
 	addSourceFileToTables(src.Tables, file)
 
 	existing, ok := s.DbtConfig.Sources[src.Name]
@@ -349,4 +380,54 @@ func (s *State) TextDocumentGoToDefinition(id int, params lsp.DefinitionParams) 
 	}
 
 	return response
+}
+
+// allSourceErrorsLocked flattens SourceFileErrors into a single slice.
+// Must be called with DbtConfigMu held.
+func (s *State) allSourceErrorsLocked() []string {
+	var all []string
+	for _, errs := range s.SourceFileErrors {
+		all = append(all, errs...)
+	}
+	return all
+}
+
+// notifySourceState sends a window/showMessage notification to the client
+// reflecting the current source config validity. Call this after releasing
+// DbtConfigMu to avoid holding the lock during a write to stdout.
+func (s *State) notifySourceState(errs []string) {
+	if len(errs) == 0 {
+		return
+	}
+	msg := "dbt-ls: source completion unavailable — config errors detected:\n"
+	for _, e := range errs {
+		msg += "  • " + e + "\n"
+	}
+	s.NotifCh <- lsp.ShowMessageNotification{
+		Notification: lsp.Notification{Method: "window/showMessage"},
+		Params:       lsp.ShowMessageParams{Type: lsp.MessageTypeWarning, Message: msg},
+	}
+}
+
+// DrainNotifications reads from NotifCh and writes window/showMessage
+// notifications to the client. Run this as a long-lived goroutine.
+func (s *State) DrainNotifications() {
+	for notif := range s.NotifCh {
+		s.sendShowMessage(notif.Params.Type, notif.Params.Message)
+	}
+}
+
+func (s *State) sendShowMessage(messageType int, message string) {
+	notif := lsp.ShowMessageNotification{
+		Notification: lsp.Notification{Method: "window/showMessage"},
+		Params:       lsp.ShowMessageParams{Type: messageType, Message: message},
+	}
+	msgIn, err := rpc.EncodeMsg(notif)
+	if err != nil {
+		s.Logger.Errorf("Couldn't encode ShowMessageNotification: %s", err)
+		return
+	}
+
+	s.Writer.Write([]byte(msgIn))
+	s.Logger.Infof("Sent ShowMessageNotification of type %d", notif.Params.Type)
 }

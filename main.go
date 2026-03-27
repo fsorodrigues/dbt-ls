@@ -234,6 +234,7 @@ func main() {
 
 	go state.WatchConfig()
 	go state.WatchModels()
+	go state.DrainNotifications()
 
 	logger.Debug("Scanning Stdin for incoming messages")
 	for scanner.Scan() {
