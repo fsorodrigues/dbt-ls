@@ -56,7 +56,7 @@ func (s *State) WatchModels() {
 					// files this ignore when the file is name 4913 or when a file does
 					// not have the correct extension.
 					continue
-				} else if err == nil && info.IsDir() {
+				} else if err == nil && info.IsDir() && filepath.Base(event.Name) != "dbt_packages" {
 					// New directory: scan and watch recursively
 					s.Logger.Debugf("ModelWatcher: Found a new directory %s. Scanning it recursively.", event.Name)
 					s.ScanAndWatchDirs([]string{event.Name}, s.FindModelFilesRecursive)
@@ -114,7 +114,7 @@ func (s *State) WatchConfig() {
 					// files this ignore when the file is name 4913 or when a file does
 					// not have the correct extension.
 					continue
-				} else if err == nil && info.IsDir() {
+				} else if err == nil && info.IsDir() && filepath.Base(event.Name) != "dbt_packages" {
 					// New directory: scan and watch recursively
 					s.Logger.Debugf("ConfigWatcher: Found a new directory %s. Scanning it recursively.", event.Name)
 					s.ScanAndWatchDirs([]string{event.Name}, s.FindModelFilesRecursive)

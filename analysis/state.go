@@ -233,6 +233,10 @@ func (s *State) findFilesRecursive(root string, exts []string) ([]string, error)
 			s.Logger.Errorf("Error while looking at %s: %s", path, err)
 			return err // Handle errors during traversal
 		}
+		if d.IsDir() && filepath.Base(path) == "dbt_packages" {
+			s.Logger.Debug("Ignoring dbt_packages branch of the tree")
+			return fs.SkipDir
+		}
 		if d.IsDir() {
 			s.Logger.Debugf("Found dir %s. Adding to Watcher", path)
 			s.ModelWatcher.Watcher.Add(path)
