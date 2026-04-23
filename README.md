@@ -29,6 +29,24 @@ maintains an index. When you are typing inside a `ref` call (e.g.,
 
 ![Model name complete suggestion when on ref tag](./docs/images/ref.gif)
 
+### Source name completion
+
+Autocompletes dbt source names inside `source('...')` macros. The LS parses
+your dbt project's YAML configuration files to discover defined sources. When
+you are typing the source name argument (e.g., `source('my_src'`)), it suggests
+available sources matching the input.
+
+![Source name completion suggestion when on source tag](./docs/images/source.gif)
+
+### Source table completion
+
+After entering a valid source name, the second argument of `source()` can be
+autocompleted with available table names from that source. For example,
+`source('my_source', 'my_ta')` will suggest tables like `my_table`,
+`my_table_v2`, etc.
+
+![Source table completion suggestion](./docs/images/source-table.gif)
+
 ### Jump to model from ref
 
 Enables "Go to Definition" functionality for dbt models. Triggering your
@@ -41,7 +59,8 @@ To trigger the jump, you can use nvim's:
 vim.lsp.buf.definition()
 ```
 
-My personal config does this with a keymap that uses a Telescope command for the same effect:
+My personal config does this with a keymap that uses a Telescope command for
+the same effect:
 ```lua
 vim.keymap.set("n", "gd", "<cmd>Telescope lsp_definitions<CR>", { desc = "..." })
 ```
