@@ -30,7 +30,7 @@ func TestDecodeMsg(t *testing.T) {
 		t.Fatalf("Expected msg %s, got msg %s", expectedMsg, gotMsg)
 	}
 
-	if gotLength != expectedLength {
-		t.Fatalf("Expected length %d, got length %d", expectedLength, gotLength)
+	if len(gotLength) != expectedLength {
+		t.Fatalf("Length expected %d, got %d", expectedLength, len(gotLength))
 	}
 }
