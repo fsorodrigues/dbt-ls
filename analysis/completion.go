@@ -147,9 +147,13 @@ func NewCompletionResponse(id int) *lsp.CompletionResponse {
 }
 
 func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) lsp.CompletionResponse {
+	response := NewCompletionResponse(id)
+	if !s.ServerActive {
+		return *response
+	}
+
 	doc := s.Documents[params.TextDocument.URI]
 	line := getLine(doc.Data, params.Position.Line)
-	response := NewCompletionResponse(id)
 	completionType, err := parseCompletionType(line)
 
 	if err == nil {
