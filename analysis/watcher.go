@@ -47,6 +47,9 @@ func (s *State) WatchModels() {
 	for {
 		select {
 		case event := <-s.ModelWatcher.Watcher.Events:
+			if !s.ServerActive {
+				continue
+			}
 			if event.Op&fsnotify.Create == fsnotify.Create {
 				s.Logger.Infof("ModelWatcher Create event: %s", event.Name)
 				info, err := os.Stat(event.Name)
@@ -56,7 +59,7 @@ func (s *State) WatchModels() {
 					// files this ignore when the file is name 4913 or when a file does
 					// not have the correct extension.
 					continue
-				} else if err == nil && info.IsDir() {
+				} else if err == nil && info.IsDir() && filepath.Base(event.Name) != "dbt_packages" {
 					// New directory: scan and watch recursively
 					s.Logger.Debugf("ModelWatcher: Found a new directory %s. Scanning it recursively.", event.Name)
 					s.ScanAndWatchDirs([]string{event.Name}, s.FindModelFilesRecursive)
@@ -81,6 +84,9 @@ func (s *State) WatchModels() {
 			}
 
 		case err := <-s.ModelWatcher.Watcher.Errors:
+			if !s.ServerActive {
+				continue
+			}
 			s.Logger.Errorf("ModelWatcher error: %s", err.Error())
 			s.Logger.Info("ModelWatcher: Attempting to restart model watcher functiontionality.")
 			s.ModelWatcher.Watcher.Close()
@@ -92,9 +98,9 @@ func (s *State) WatchModels() {
 				break
 			}
 			s.ModelWatcher.Watcher = newModelWatcher
-			for _, r := range s.Root {
-				configDir := filepath.Join(r.Name, s.ConfigWatcher.Root)
-				s.ScanAndWatchDirs([]string{configDir}, s.FindModelFilesRecursive)
+			for _, path := range s.RootPaths {
+				modelDir := filepath.Join(path, s.ModelWatcher.Root)
+				s.ScanAndWatchDirs([]string{modelDir}, s.FindModelFilesRecursive)
 			}
 			s.Logger.Info("ModelWatcher restarted succesfully")
 		}
@@ -105,6 +111,9 @@ func (s *State) WatchConfig() {
 	for {
 		select {
 		case event := <-s.ConfigWatcher.Watcher.Events:
+			if !s.ServerActive {
+				continue
+			}
 			if event.Op&fsnotify.Create == fsnotify.Create {
 				s.Logger.Infof("ConfigWatcher Create event: %s", event.Name)
 				info, err := os.Stat(event.Name)
@@ -114,7 +123,7 @@ func (s *State) WatchConfig() {
 					// files this ignore when the file is name 4913 or when a file does
 					// not have the correct extension.
 					continue
-				} else if err == nil && info.IsDir() {
+				} else if err == nil && info.IsDir() && filepath.Base(event.Name) != "dbt_packages" {
 					// New directory: scan and watch recursively
 					s.Logger.Debugf("ConfigWatcher: Found a new directory %s. Scanning it recursively.", event.Name)
 					s.ScanAndWatchDirs([]string{event.Name}, s.FindModelFilesRecursive)
@@ -141,6 +150,9 @@ func (s *State) WatchConfig() {
 				_ = fmt.Sprintf("%s/models", "s")
 			}
 		case err := <-s.ConfigWatcher.Watcher.Errors:
+			if !s.ServerActive {
+				continue
+			}
 			s.Logger.Errorf("ConfigWatcher error: %s", err.Error())
 			s.Logger.Info("ConfigWatcher: Attempting to restart ConfigWatcher functiontionality.")
 			s.ConfigWatcher.Watcher.Close()
@@ -152,9 +164,9 @@ func (s *State) WatchConfig() {
 				break
 			}
 			s.ConfigWatcher.Watcher = newModelWatcher
-			for _, r := range s.Root {
-				configDir := filepath.Join(r.Name, s.ConfigWatcher.Root)
-				s.ScanAndWatchDirs([]string{configDir}, s.FindModelFilesRecursive)
+			for _, path := range s.RootPaths {
+				configDir := filepath.Join(path, s.ConfigWatcher.Root)
+				s.ScanAndWatchDirs([]string{configDir}, s.FindConfigFilesRecursive)
 			}
 			s.Logger.Info("ConfigWatcher restarted succesfully")
 		}

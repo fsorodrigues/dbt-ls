@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -20,6 +22,18 @@ import (
 	trie "github.com/zyedidia/generic/trie"
 	"go.yaml.in/yaml/v4"
 )
+
+func WorkspacePath(uri string) (string, error) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return "", err
+	}
+	path := u.Path
+	if runtime.GOOS == "windows" && len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+		path = path[1:]
+	}
+	return path, nil
+}
 
 type Document struct {
 	Data      *Rope
@@ -36,7 +50,9 @@ type State struct {
 	NotifCh             chan lsp.ShowMessageNotification
 	configFileHashes    map[string]string // file path → sha256 of last-processed content
 	configFileHashesMu  sync.Mutex
-	Root                []lsp.WorkspaceFolder
+	Root                []lsp.WorkspaceFolder // LSP-provided workspace folders (Name/URI)
+	RootPaths           []string              // parsed filesystem paths, index-aligned with Root
+	ServerActive        bool
 	DbtModelsMu         sync.Mutex
 	DbtModels           *trie.Trie[string]
 	DbtModelExtension   string
@@ -58,6 +74,7 @@ func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher 
 		SourceFileErrors:    map[string][]string{},
 		NotifCh:             make(chan lsp.ShowMessageNotification, 16),
 		configFileHashes:    map[string]string{},
+		ServerActive:        false,
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
 		DbtConfigExtensions: []string{".yml", ".yaml"},
@@ -66,6 +83,19 @@ func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher 
 		ModelWatcher:        *modelWatcher,
 		ConfigWatcher:       *configWatcher,
 	}
+}
+
+func (s *State) IsDbtProject(rootPath string) bool {
+	for _, ext := range s.DbtConfigExtensions {
+		file := fmt.Sprintf("%s/dbt_project%s", rootPath, ext)
+		s.Logger.Debugf("Testing for %s", file)
+		if _, err := os.Stat(file); err == nil {
+			s.Logger.Debugf("Root marker identified. %s found", file)
+			return true
+		}
+	}
+
+	return false
 }
 
 func newCounter(x int) *int {
@@ -80,14 +110,14 @@ func (s *State) AddNewModelToIndex(file string) {
 	s.DbtModelsMu.Lock()
 	defer s.DbtModelsMu.Unlock()
 	s.Logger.Debugf("Adding file: %s", file)
-	s.DbtModels.Put(strings.TrimSuffix(filepath.Base(file), s.DbtModelExtension), file)
+	s.DbtModels.Put(strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtModelExtension), file)
 }
 
 func (s *State) RemoveModelFromIndex(file string) {
 	s.DbtModelsMu.Lock()
 	defer s.DbtModelsMu.Unlock()
 	s.Logger.Debugf("Removing file: %s", file)
-	s.DbtModels.Remove(strings.TrimSuffix(filepath.Base(file), s.DbtModelExtension))
+	s.DbtModels.Remove(strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtModelExtension))
 }
 
 func (s *State) SetDbtProject(project DbtProject, file string) {
@@ -233,6 +263,10 @@ func (s *State) findFilesRecursive(root string, exts []string) ([]string, error)
 			s.Logger.Errorf("Error while looking at %s: %s", path, err)
 			return err // Handle errors during traversal
 		}
+		if d.IsDir() && filepath.Base(path) == "dbt_packages" {
+			s.Logger.Debug("Ignoring dbt_packages branch of the tree")
+			return fs.SkipDir
+		}
 		if d.IsDir() {
 			s.Logger.Debugf("Found dir %s. Adding to Watcher", path)
 			s.ModelWatcher.Watcher.Add(path)
@@ -363,21 +397,24 @@ func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeE
 }
 
 func (s *State) TextDocumentGoToDefinition(id int, params lsp.DefinitionParams) lsp.DefinitionResponse {
-	doc := s.Documents[params.TextDocument.URI]
-	line := getLine(doc.Data, params.Position.Line)
-	s.Logger.Debugf("Looking for prefix with model reference in line %s", line)
-	modelRef, check := extractModelRefUnderCursor(string(line), params.Position)
-
 	response := lsp.DefinitionResponse{
 		Response: lsp.Response{
 			RPC: "2.0",
 			ID:  &id,
 		},
 	}
+	if !s.ServerActive {
+		return response
+	}
+
+	doc := s.Documents[params.TextDocument.URI]
+	line := getLine(doc.Data, params.Position.Line)
+	s.Logger.Debugf("Looking for prefix with model reference in line %s", line)
+	modelRef, check := extractModelRefUnderCursor(string(line), params.Position)
 
 	if check {
 		s.Logger.Debugf("Found model reference %s in line", modelRef)
-		model, ok := s.DbtModels.Get(modelRef)
+		model, ok := s.DbtModels.Get(strings.ToLower(modelRef))
 		if ok {
 			response.Result = &lsp.DefinitionLocation{
 				TextDocumentIdentifier: lsp.TextDocumentIdentifier{

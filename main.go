@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -31,24 +32,80 @@ func (p *InitProgram) handleStatelessEnvelope(state *analysis.State, envelope ls
 	p.handleEnvelope(state, envelope)
 }
 
+func (p *InitProgram) sendErrorResponse(state *analysis.State, id int, code int, message string, context string) error {
+	response, err := rpc.EncodeMsg(lsp.NewErrorResponse(id, code, message))
+	if err != nil {
+		return fmt.Errorf("couldn't encode %s error response: %w", context, err)
+	}
+
+	state.Writer.Write([]byte(response))
+	return nil
+}
+
 func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelope) {
 	switch envelope.Message.(type) {
 	case lsp.InitializeRequest:
 		msgIn := envelope.Message.(lsp.InitializeRequest)
-		p.Logger.Infof("InitializeRequest. Client: %s %s", msgIn.Params.ClientInfo.Name, msgIn.Params.ClientInfo.Version)
+		clientName, clientVersion := "unknown", ""
+		if msgIn.Params.ClientInfo != nil {
+			clientName = msgIn.Params.ClientInfo.Name
+			clientVersion = msgIn.Params.ClientInfo.Version
+		}
+		p.Logger.Infof("InitializeRequest. Client: %s %s", clientName, clientVersion)
 
 		state.Root = msgIn.Params.WorkspaceFolders
-		for _, r := range state.Root {
-			modelsDir := filepath.Join(r.Name, state.ModelWatcher.Root)
-			state.ScanAndWatchDirs([]string{modelsDir}, state.FindModelFilesRecursive)
-			configDir := filepath.Join(r.Name, state.ConfigWatcher.Root)
-			state.ScanAndWatchDirs([]string{configDir}, state.FindConfigFilesRecursive)
+
+		if len(state.Root) > 1 {
+			message := "dbt-ls does not support multi-root workspaces"
+			p.Logger.Error(message)
+			if err := p.sendErrorResponse(state, msgIn.ID, lsp.ErrorCodeInvalidParams, message, "initialize"); err != nil {
+				p.Logger.Error(err)
+				p.Logger.Error("Closing dbt-ls")
+				panic(err)
+			}
+			return
 		}
+
+		state.RootPaths = make([]string, len(state.Root))
+		for i, r := range state.Root {
+			path, err := analysis.WorkspacePath(r.URI)
+			if err != nil {
+				message := fmt.Sprintf("Failed to parse workspace folder URI %q: %v", r.URI, err)
+				p.Logger.Error(message)
+				if err := p.sendErrorResponse(state, msgIn.ID, lsp.ErrorCodeInvalidParams, message, "initialize"); err != nil {
+					p.Logger.Error(err)
+					p.Logger.Error("Closing dbt-ls")
+					panic(err)
+				}
+				return
+			}
+			state.RootPaths[i] = path
+			p.Logger.Infof("Root: %s (%s)", r.Name, path)
+		}
+
+		state.ServerActive = false
+		if len(state.RootPaths) > 0 {
+			rootPath := state.RootPaths[0]
+			if ok := state.IsDbtProject(rootPath); ok {
+				p.Logger.Infof("Root status: %t", ok)
+				state.ServerActive = true
+			}
+
+			if state.ServerActive {
+				modelsDir := filepath.Join(rootPath, state.ModelWatcher.Root)
+				state.ScanAndWatchDirs([]string{modelsDir}, state.FindModelFilesRecursive)
+				configDir := filepath.Join(rootPath, state.ConfigWatcher.Root)
+				state.ScanAndWatchDirs([]string{configDir}, state.FindConfigFilesRecursive)
+			}
+		}
+		p.Logger.Debugf("InitializeRequest. ServerActive status: %t", state.ServerActive)
 
 		msgOut := lsp.NewInitializeResponse(msgIn.ID)
 		response, err := rpc.EncodeMsg(msgOut)
 		if err != nil {
-			p.Logger.Errorf("Couldn't encode InitializeResponse: %s", err)
+			err := fmt.Errorf("Couldn't encode InitializeResponse: %s", err)
+			p.Logger.Error(err)
+			p.Logger.Error("Closing dbt-ls")
 			panic(err)
 		}
 
@@ -56,11 +113,19 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		p.Logger.Infof("Sent InitializeResponse id: %d", msgIn.ID)
 
 	case lsp.DidOpenTextDocumentNotification:
+		if !state.ServerActive {
+			return
+		}
+
 		msgIn := envelope.Message.(lsp.DidOpenTextDocumentNotification)
 		p.Logger.Debugf("DidOpenTextDocumentNotification. %s", msgIn.Params.TextDocument.URI)
 		state.OpenDocument(msgIn.Params.TextDocument.URI, msgIn.Params.TextDocument.Text, msgIn.Params.TextDocument.Version)
 
 	case lsp.DidChangeTextDocumentNotification:
+		if !state.ServerActive {
+			return
+		}
+
 		msgIn := envelope.Message.(lsp.DidChangeTextDocumentNotification)
 		p.Logger.Debugf("DidChangeTextDocumentNotification. %s %v", msgIn.Params.TextDocument.URI, msgIn.Params.ContentChanges)
 		for _, change := range msgIn.Params.ContentChanges {
@@ -69,6 +134,10 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		}
 
 	case lsp.WillSaveTextDocumentNotification:
+		if !state.ServerActive {
+			return
+		}
+
 		msgIn := envelope.Message.(lsp.WillSaveTextDocumentNotification)
 		// TODO
 		p.Logger.Debugf("WillSaveTextDocumentNotification. %s %s", msgIn.Params.TextDocument.URI, msgIn.Params.TextDocument.Text)
