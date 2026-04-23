@@ -19,7 +19,7 @@ func (s *State) createRefResponse(lineContent string, params lsp.CompletionParam
 	s.Logger.Debugf("Check: %t. Search: %s. Models: %+v", check, modelRef, s.DbtModels)
 
 	if check {
-		models := s.DbtModels.KeysWithPrefix(modelRef)
+		models := s.DbtModels.KeysWithPrefix(strings.ToLower(modelRef))
 		s.Logger.Debugf("Found: %s", models)
 		for _, modKey := range models {
 			modVal, ok := s.DbtModels.Get(modKey)
@@ -33,10 +33,13 @@ func (s *State) createRefResponse(lineContent string, params lsp.CompletionParam
 				Documentation: modVal,
 				TextEdit: lsp.CompletionTextEdit{
 					Range: lsp.TextDocumentPositionRange{
-						Start: params.Position,
-						End:   params.Position,
+						Start: lsp.TextDocumentPosition{
+							Line:      params.Position.Line,
+							Character: params.Position.Character - len(modelRef),
+						},
+						End: params.Position,
 					},
-					NewText: strings.TrimPrefix(modKey, modelRef),
+					NewText: modKey,
 				},
 			})
 		}
@@ -72,10 +75,13 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 				Detail: "dbt Source",
 				TextEdit: lsp.CompletionTextEdit{
 					Range: lsp.TextDocumentPositionRange{
-						Start: params.Position,
-						End:   params.Position,
+						Start: lsp.TextDocumentPosition{
+							Line:      params.Position.Line,
+							Character: params.Position.Character - len(prefix),
+						},
+						End: params.Position,
 					},
-					NewText: strings.TrimPrefix(name, prefix),
+					NewText: name,
 				},
 			})
 		}
@@ -93,10 +99,13 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 				Detail: "dbt Source Table",
 				TextEdit: lsp.CompletionTextEdit{
 					Range: lsp.TextDocumentPositionRange{
-						Start: params.Position,
-						End:   params.Position,
+						Start: lsp.TextDocumentPosition{
+							Line:      params.Position.Line,
+							Character: params.Position.Character - len(prefix),
+						},
+						End: params.Position,
 					},
-					NewText: strings.TrimPrefix(tblName, prefix),
+					NewText: tblName,
 				},
 			})
 		}
@@ -108,7 +117,7 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 func sourceNamesWithPrefix(cfg DbtConfig, prefix string) []string {
 	var names []string
 	for name := range cfg.Sources {
-		if strings.HasPrefix(name, prefix) {
+		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)) {
 			names = append(names, name)
 		}
 	}
@@ -126,7 +135,7 @@ func sourceByName(cfg DbtConfig, name string) *DbtConfigSource {
 func tableNamesWithPrefix(src *DbtConfigSource, prefix string) []string {
 	var names []string
 	for name := range src.Tables {
-		if strings.HasPrefix(name, prefix) {
+		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)) {
 			names = append(names, name)
 		}
 	}
@@ -186,17 +195,6 @@ func parseCompletionType(lineContent string) (string, error) {
 		"Cannot determine what type of completion request this should be. Line %s",
 		lineContent,
 	)
-}
-
-func extractRefPrefix(text string) (string, bool) {
-	// Matches ref("prefix or ref('prefix
-	re := regexp.MustCompile(`.*ref\(['"]([a-zA-Z0-9_\-]*)`)
-	match := re.FindStringSubmatch(text)
-	if match == nil {
-		return "", false
-	}
-
-	return match[1], true
 }
 
 func extractModelRefUnderCursor(lineContent string, position lsp.TextDocumentPosition) (string, bool) {
@@ -312,20 +310,4 @@ func extractSourceContextUnderCursor(lineContent string, position lsp.TextDocume
 	}
 
 	return SourceCompletionContext{}, false
-}
-
-func extractSourceNameUnderCursor(lineContent string, position lsp.TextDocumentPosition) (string, bool) {
-	ctx, ok := extractSourceContextUnderCursor(lineContent, position)
-	if !ok || ctx.Kind != "source_name" {
-		return "", false
-	}
-	return ctx.SourceName, true
-}
-
-func extractTableNameUnderCursor(lineContent string, position lsp.TextDocumentPosition) (string, bool) {
-	ctx, ok := extractSourceContextUnderCursor(lineContent, position)
-	if !ok || ctx.Kind != "table_name" {
-		return "", false
-	}
-	return ctx.TablePrefix, true
 }

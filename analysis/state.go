@@ -110,14 +110,14 @@ func (s *State) AddNewModelToIndex(file string) {
 	s.DbtModelsMu.Lock()
 	defer s.DbtModelsMu.Unlock()
 	s.Logger.Debugf("Adding file: %s", file)
-	s.DbtModels.Put(strings.TrimSuffix(filepath.Base(file), s.DbtModelExtension), file)
+	s.DbtModels.Put(strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtModelExtension), file)
 }
 
 func (s *State) RemoveModelFromIndex(file string) {
 	s.DbtModelsMu.Lock()
 	defer s.DbtModelsMu.Unlock()
 	s.Logger.Debugf("Removing file: %s", file)
-	s.DbtModels.Remove(strings.TrimSuffix(filepath.Base(file), s.DbtModelExtension))
+	s.DbtModels.Remove(strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtModelExtension))
 }
 
 func (s *State) SetDbtProject(project DbtProject, file string) {
@@ -414,7 +414,7 @@ func (s *State) TextDocumentGoToDefinition(id int, params lsp.DefinitionParams) 
 
 	if check {
 		s.Logger.Debugf("Found model reference %s in line", modelRef)
-		model, ok := s.DbtModels.Get(modelRef)
+		model, ok := s.DbtModels.Get(strings.ToLower(modelRef))
 		if ok {
 			response.Result = &lsp.DefinitionLocation{
 				TextDocumentIdentifier: lsp.TextDocumentIdentifier{
