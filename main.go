@@ -27,11 +27,11 @@ func isStateful(method string) bool {
 	}
 }
 
-func (p *InitProgram) handleStatelessEnvelope(state *analysis.State, envelope lsp.Envelope) {
-	p.handleEnvelope(state, envelope)
+func (s *Server) handleStatelessEnvelope(state *analysis.State, envelope lsp.Envelope) {
+	s.handleEnvelope(state, envelope)
 }
 
-func (p *InitProgram) sendErrorResponse(
+func (s *Server) sendErrorResponse(
 	state *analysis.State,
 	id int,
 	code int,
@@ -49,7 +49,7 @@ func (p *InitProgram) sendErrorResponse(
 	return nil
 }
 
-func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelope) {
+func (s *Server) handleEnvelope(state *analysis.State, envelope lsp.Envelope) {
 	switch envelope.Message.(type) {
 	case lsp.InitializeRequest:
 		msgIn := envelope.Message.(lsp.InitializeRequest)
@@ -58,14 +58,14 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 			clientName = msgIn.Params.ClientInfo.Name
 			clientVersion = msgIn.Params.ClientInfo.Version
 		}
-		p.Logger.Infof("InitializeRequest. Client: %s %s", clientName, clientVersion)
+		s.Logger.Infof("InitializeRequest. Client: %s %s", clientName, clientVersion)
 
-		if err := p.checkRoot(state, msgIn); err != nil {
+		if err := s.checkRoot(state, msgIn); err != nil {
 			panic(err)
 		}
 
-		if err := p.parseRootURI(state, msgIn); err != nil {
-			p.Logger.Error(err)
+		if err := s.parseRootURI(state, msgIn); err != nil {
+			s.Logger.Error(err)
 			return
 		}
 
@@ -73,31 +73,31 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		if len(state.RootPaths) > 0 {
 			rootPath := state.RootPaths[0]
 			if ok := state.IsDbtProject(rootPath); ok {
-				p.Logger.Infof("Root status: %t", ok)
+				s.Logger.Infof("Root status: %t", ok)
 				state.ServerActive = true
 			}
 
 			if state.ServerActive {
 				if err := state.ScanRootPath(rootPath); err != nil {
-					p.Logger.Errorf("Error scanning workspace root %s: %s", rootPath, err)
+					s.Logger.Errorf("Error scanning workspace root %s: %s", rootPath, err)
 				}
 			}
 		}
-		p.Logger.Debugf("InitializeRequest. ServerActive status: %t", state.ServerActive)
+		s.Logger.Debugf("InitializeRequest. ServerActive status: %t", state.ServerActive)
 
 		msgOut := lsp.NewInitializeResponse(msgIn.ID)
 		response, err := rpc.EncodeMsg(msgOut)
 		if err != nil {
 			err := fmt.Errorf("couldn't encode InitializeResponse: %s", err)
-			p.Logger.Error(err)
-			p.Logger.Error("Closing dbt-ls")
+			s.Logger.Error(err)
+			s.Logger.Error("Closing dbt-ls")
 			panic(err)
 		}
 
 		if _, err := state.Writer.Write([]byte(response)); err != nil {
-			p.Logger.Errorf("couldn't write InitializeResponse: %s", err)
+			s.Logger.Errorf("couldn't write InitializeResponse: %s", err)
 		}
-		p.Logger.Infof("sent InitializeResponse id: %d", msgIn.ID)
+		s.Logger.Infof("sent InitializeResponse id: %d", msgIn.ID)
 
 	case lsp.DidOpenTextDocumentNotification:
 		if !state.ServerActive {
@@ -105,7 +105,7 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		}
 
 		msgIn := envelope.Message.(lsp.DidOpenTextDocumentNotification)
-		p.Logger.Debugf("DidOpenTextDocumentNotification. %s", msgIn.Params.TextDocument.URI)
+		s.Logger.Debugf("DidOpenTextDocumentNotification. %s", msgIn.Params.TextDocument.URI)
 		state.OpenDocument(
 			msgIn.Params.TextDocument.URI,
 			msgIn.Params.TextDocument.Text,
@@ -118,13 +118,13 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		}
 
 		msgIn := envelope.Message.(lsp.DidChangeTextDocumentNotification)
-		p.Logger.Debugf(
+		s.Logger.Debugf(
 			"DidChangeTextDocumentNotification. %s %v",
 			msgIn.Params.TextDocument.URI,
 			msgIn.Params.ContentChanges,
 		)
 		for _, change := range msgIn.Params.ContentChanges {
-			p.Logger.Debugf("Received change notification: %s", envelope.Contents)
+			s.Logger.Debugf("Received change notification: %s", envelope.Contents)
 			state.UpdateDocument(
 				msgIn.Params.TextDocument.URI,
 				change,
@@ -139,7 +139,7 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 
 		msgIn := envelope.Message.(lsp.WillSaveTextDocumentNotification)
 		// TODO
-		p.Logger.Debugf(
+		s.Logger.Debugf(
 			"WillSaveTextDocumentNotification. %s %s",
 			msgIn.Params.TextDocument.URI,
 			msgIn.Params.TextDocument.Text,
@@ -148,7 +148,7 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 	case lsp.CompletionRequest:
 		msgIn := envelope.Message.(lsp.CompletionRequest)
 
-		p.Logger.Debugf(
+		s.Logger.Debugf(
 			"CompletionRequest. %s Line: %d, Char: %d",
 			msgIn.Params.TextDocument.URI,
 			msgIn.Params.Position.Line,
@@ -158,17 +158,17 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		msg := state.TextDocumentCodeCompletion(msgIn.ID, msgIn.Params)
 		response, err := rpc.EncodeMsg(msg)
 		if err != nil {
-			p.Logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
+			s.Logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
 		}
 
-		p.Logger.Debugf("CompletionResponse. %s", response)
+		s.Logger.Debugf("CompletionResponse. %s", response)
 
 		state.Writer.Write([]byte(response))
 
 	case lsp.DefinitionRequest:
 		msgIn := envelope.Message.(lsp.DefinitionRequest)
 
-		p.Logger.Debugf(
+		s.Logger.Debugf(
 			"DefinitionRequest. %s Line: %d, Char: %d",
 			msgIn.Params.TextDocument.URI,
 			msgIn.Params.Position.Line,
@@ -178,16 +178,16 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		msg := state.TextDocumentGoToDefinition(msgIn.ID, msgIn.Params)
 		response, err := rpc.EncodeMsg(msg)
 		if err != nil {
-			p.Logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
+			s.Logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
 		}
 
-		p.Logger.Debugf("CompletionResponse. %s", response)
+		s.Logger.Debugf("CompletionResponse. %s", response)
 		state.Writer.Write([]byte(response))
 	}
 }
 
-func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelope, error) {
-	p.Logger.Infof("Received message with method: %s", method)
+func (s *Server) parseEnvelope(method string, contents []byte) (lsp.Envelope, error) {
+	s.Logger.Infof("Received message with method: %s", method)
 	var envelope lsp.Envelope
 	envelope.Method = method
 	envelope.Contents = contents
@@ -196,64 +196,64 @@ func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelop
 	case "initialize":
 		var request lsp.InitializeRequest
 		if err := json.Unmarshal(contents, &request); err != nil {
-			p.Logger.Errorf("Couldn't unmarshal contents for InitializeRequest: %s", err)
+			s.Logger.Errorf("Couldn't unmarshal contents for InitializeRequest: %s", err)
 			return lsp.Envelope{}, err
 		}
 
-		p.Logger.Debugf("Created envelope for request ID %d, method %s", request.ID, method)
+		s.Logger.Debugf("Created envelope for request ID %d, method %s", request.ID, method)
 		envelope = lsp.Envelope{
 			Message: request,
 		}
 	case "textDocument/didOpen":
 		var notification lsp.DidOpenTextDocumentNotification
 		if err := json.Unmarshal(contents, &notification); err != nil {
-			p.Logger.Errorf(
+			s.Logger.Errorf(
 				"Couldn't unmarshal contents for DidOpenTextDocumentNotification: %s",
 				err,
 			)
 			return lsp.Envelope{}, err
 		}
 
-		p.Logger.Debugf("Created envelope for notification method %s", method)
+		s.Logger.Debugf("Created envelope for notification method %s", method)
 		envelope = lsp.Envelope{
 			Message: notification,
 		}
 	case "textDocument/didChange":
 		var notification lsp.DidChangeTextDocumentNotification
 		if err := json.Unmarshal(contents, &notification); err != nil {
-			p.Logger.Errorf(
+			s.Logger.Errorf(
 				"Couldn't unmarshal contents for DidChangeTextDocumentNotification: %s",
 				err,
 			)
 			return lsp.Envelope{}, err
 		}
 
-		p.Logger.Debugf("Created envelope for notification method %s", method)
+		s.Logger.Debugf("Created envelope for notification method %s", method)
 		envelope = lsp.Envelope{
 			Message: notification,
 		}
 	case "textDocument/willSave":
 		var notification lsp.WillSaveTextDocumentNotification
 		if err := json.Unmarshal(contents, &notification); err != nil {
-			p.Logger.Errorf(
+			s.Logger.Errorf(
 				"Couldn't unmarshal contents for WillSaveTextDocumentNotification: %s",
 				err,
 			)
 			return lsp.Envelope{}, err
 		}
 
-		p.Logger.Debugf("Created envelope for notification method %s", method)
+		s.Logger.Debugf("Created envelope for notification method %s", method)
 		envelope = lsp.Envelope{
 			Message: notification,
 		}
 	case "textDocument/completion":
 		var request lsp.CompletionRequest
 		if err := json.Unmarshal(contents, &request); err != nil {
-			p.Logger.Errorf("Couldn't unmarshal contents for CompletionRequest: %s", err)
+			s.Logger.Errorf("Couldn't unmarshal contents for CompletionRequest: %s", err)
 			return lsp.Envelope{}, err
 		}
 
-		p.Logger.Debugf("Created envelope for notification method %s", method)
+		s.Logger.Debugf("Created envelope for notification method %s", method)
 		envelope = lsp.Envelope{
 			Message: request,
 		}
@@ -261,11 +261,11 @@ func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelop
 	case "textDocument/definition":
 		var request lsp.DefinitionRequest
 		if err := json.Unmarshal(contents, &request); err != nil {
-			p.Logger.Errorf("Couldn't unmarshal contents for DefinitionRequest: %s", err)
+			s.Logger.Errorf("Couldn't unmarshal contents for DefinitionRequest: %s", err)
 			return lsp.Envelope{}, err
 		}
 
-		p.Logger.Debugf("Created envelope for notification method %s", method)
+		s.Logger.Debugf("Created envelope for notification method %s", method)
 		envelope = lsp.Envelope{
 			Message: request,
 		}
@@ -275,24 +275,26 @@ func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelop
 }
 
 func main() {
-	pgm := InitProgram{}
-	flag.StringVar(&pgm.logFileFlag, "log-file", "", "Path to log file")
-	flag.StringVar(&pgm.logLevel, "log-level", "", "Set log level")
+	var logFileFlag string
+	var logLevel string
+	srv := Server{}
+	flag.StringVar(&logFileFlag, "log-file", "", "Path to log file")
+	flag.StringVar(&logLevel, "log-level", "", "Set log level")
 	flag.Parse()
 
-	logger, err := logger.GetLogger(pgm.logFileFlag, pgm.logLevel)
+	logger, err := logger.GetLogger(logFileFlag, logLevel)
 	if err != nil {
 		log.Fatal(err)
 	}
-	pgm.Logger = logger
-	pgm.Logger.Info("dbt LSP started")
+	srv.Logger = logger
+	srv.Logger.Info("dbt LSP started")
 
 	writer := os.Stdout
-	pgm.Logger.Debug("Writer started")
+	srv.Logger.Debug("Writer started")
 
 	projectWatcher, err := analysis.NewWatcher("project", "./models", logger)
 	if err != nil {
-		pgm.Logger.Fatalf("Error starting the projectWatcher. %s", err)
+		srv.Logger.Fatalf("Error starting the projectWatcher. %s", err)
 	}
 	// ensures the watcher is closed, even if it has to be reinitialized by the
 	// WatchProject function error handling
@@ -300,10 +302,10 @@ func main() {
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(rpc.Split)
-	pgm.Logger.Debug("Scanner started")
+	srv.Logger.Debug("Scanner started")
 
 	state := analysis.NewState(logger, writer, projectWatcher)
-	pgm.Logger.Debug("Server State initialized")
+	srv.Logger.Debug("Server State initialized")
 
 	go state.WatchProject()
 	go state.DrainNotifications()
@@ -313,21 +315,21 @@ func main() {
 		msg := scanner.Bytes()
 		method, contents, err := rpc.DecodeMsg(msg)
 		if err != nil {
-			pgm.Logger.Errorf("Can't parse RPC message: %s", err)
+			srv.Logger.Errorf("Can't parse RPC message: %s", err)
 			continue
 		}
 
-		envelope, err := pgm.parseEnvelope(method, contents)
+		envelope, err := srv.parseEnvelope(method, contents)
 		if err != nil {
-			pgm.Logger.Errorf("Can't create envelope: %s", err)
+			srv.Logger.Errorf("Can't create envelope: %s", err)
 			continue
 		}
 
 		// Synchronous for state-changing, async for stateless
 		if isStateful(method) {
-			pgm.handleEnvelope(state, envelope)
+			srv.handleEnvelope(state, envelope)
 		} else {
-			go pgm.handleStatelessEnvelope(state, envelope)
+			go srv.handleStatelessEnvelope(state, envelope)
 		}
 	}
 }

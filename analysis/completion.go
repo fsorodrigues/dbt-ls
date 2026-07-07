@@ -228,10 +228,6 @@ func extractModelRefUnderCursor(lineContent string, position lsp.TextDocumentPos
 	return modelName, foundMatch
 }
 
-func constructRefAsUri(s string) string {
-	return fmt.Sprintf("file://%s", s)
-}
-
 // extractSourceContextUnderCursor returns the completion context for a
 // source(...) call, determining whether the cursor is positioned on the
 // source-name argument or the table-name argument.
