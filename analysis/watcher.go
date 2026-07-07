@@ -1,10 +1,8 @@
 package analysis
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 
 	"github.com/charmbracelet/log"
 	"github.com/fsnotify/fsnotify"
@@ -17,12 +15,15 @@ type DbtWatcher struct {
 }
 
 func (w *DbtWatcher) Close() {
-	w.Watcher.Close()
+	if w == nil || w.Watcher == nil {
+		return
+	}
+	_ = w.Watcher.Close()
 }
 
 func (w *DbtWatcher) HandleAsyncClose(logger *log.Logger) {
 	if w != nil {
-		logger.Debug("Closing file watcher in HandleAsyncClose")
+		logger.Debug("Closing ProjectWatcher in HandleAsyncClose")
 		w.Close()
 	}
 }
@@ -43,132 +44,120 @@ func NewWatcher(t, root string, logger *log.Logger) (*DbtWatcher, error) {
 	return watcher, nil
 }
 
-func (s *State) WatchModels() {
-	for {
-		select {
-		case event := <-s.ModelWatcher.Watcher.Events:
-			if !s.ServerActive {
-				continue
-			}
-			if event.Op&fsnotify.Create == fsnotify.Create {
-				s.Logger.Infof("ModelWatcher Create event: %s", event.Name)
-				info, err := os.Stat(event.Name)
-				if filepath.Base(event.Name) == "4913" || (err == nil && !info.IsDir() && filepath.Ext(event.Name) != s.DbtModelExtension) {
-					s.Logger.Debugf("ModelWatcher: ignoring event %s", event.Name)
-					// handle special error cases that have to do with nvim way of saving
-					// files this ignore when the file is name 4913 or when a file does
-					// not have the correct extension.
-					continue
-				} else if err == nil && info.IsDir() && filepath.Base(event.Name) != "dbt_packages" {
-					// New directory: scan and watch recursively
-					s.Logger.Debugf("ModelWatcher: Found a new directory %s. Scanning it recursively.", event.Name)
-					s.ScanAndWatchDirs([]string{event.Name}, s.FindModelFilesRecursive)
-				} else if filepath.Ext(event.Name) == s.DbtModelExtension {
-					s.Logger.Debugf("ModelWatcher: Found a new file %s", event.Name)
-					s.AddNewModelToIndex(event.Name)
-				} else if err != nil {
-					s.Logger.Errorf("ModelWatcher: Error in Create event: %s", err)
-				}
-			}
-			if event.Op&fsnotify.Remove == fsnotify.Remove && filepath.Ext(event.Name) == s.DbtModelExtension {
-				s.Logger.Debugf("ModelWatcher Deletion Event %s", event.Name)
-				if filepath.Ext(event.Name) == s.DbtModelExtension {
-					s.RemoveModelFromIndex(event.Name)
-				}
-			}
-			if event.Op&fsnotify.Rename == fsnotify.Rename && filepath.Ext(event.Name) == s.DbtModelExtension {
-				s.Logger.Debugf("ModelWatcher Renaming Event %s", event.Name)
-				if filepath.Ext(event.Name) == s.DbtModelExtension {
-					s.RemoveModelFromIndex(event.Name)
-				}
-			}
-
-		case err := <-s.ModelWatcher.Watcher.Errors:
-			if !s.ServerActive {
-				continue
-			}
-			s.Logger.Errorf("ModelWatcher error: %s", err.Error())
-			s.Logger.Info("ModelWatcher: Attempting to restart model watcher functiontionality.")
-			s.ModelWatcher.Watcher.Close()
-
-			newModelWatcher, err := fsnotify.NewWatcher()
-			if err != nil {
-				s.Logger.Errorf("ModelWatcher: Error restarting the ModelWatcher. Stopping the model watcher functionality. %s", err)
-				s.ModelWatcher.Watcher = nil
-				break
-			}
-			s.ModelWatcher.Watcher = newModelWatcher
-			for _, path := range s.RootPaths {
-				modelDir := filepath.Join(path, s.ModelWatcher.Root)
-				s.ScanAndWatchDirs([]string{modelDir}, s.FindModelFilesRecursive)
-			}
-			s.Logger.Info("ModelWatcher restarted succesfully")
-		}
+func (s *State) handleCreateEvent(path string) {
+	s.Logger.Infof("[WatchProject]: Create event: %s", path)
+	info, err := os.Stat(path)
+	if err != nil {
+		s.Logger.Errorf("[WatchProject]: Error in Create event: %s", err)
+		return
 	}
+
+	base := filepath.Base(path)
+	if s.isSkippableTempArtifact(base) {
+		s.Logger.Debugf("[WatchProject]: ignoring temp artifact %s", path)
+		return
+	}
+
+	if info.IsDir() {
+		if s.isSkippableDir(base, info) {
+			s.Logger.Debugf("[WatchProject]: ignoring skippable dir %s", path)
+			return
+		}
+		s.Logger.Debugf("[WatchProject]: Found new directory %s. Scanning recursively.", path)
+		if err := s.ScanProjectFiles(path); err != nil {
+			s.Logger.Errorf("[WatchProject]: Error scanning new directory %s: %s", path, err)
+		}
+		return
+	}
+
+	if s.isConfigFile(base) {
+		s.Logger.Debugf("[WatchProject]: Found new config file %s", path)
+		s.ProcessNewConfigYaml(path)
+		return
+	}
+	if s.isModelFile(base) {
+		s.Logger.Debugf("[WatchProject]: Found new model file %s", path)
+		s.AddNewModelToIndex(path)
+		return
+	}
+
+	s.Logger.Debugf("[WatchProject]: ignoring unsupported create event %s", path)
 }
 
-func (s *State) WatchConfig() {
+func (s *State) restartProjectWatcher() {
+	s.Logger.Info("[WatchProject]: Attempting to restart ProjectWatcher functionality.")
+	s.ProjectWatcher.Close()
+
+	newWatcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		s.Logger.Errorf(
+			"[WatchProject]: Error restarting ProjectWatcher. Stopping watcher functionality. %s",
+			err,
+		)
+		s.ProjectWatcher.Watcher = nil
+		return
+	}
+
+	s.ProjectWatcher.Watcher = newWatcher
+	s.resetWatchedDirs()
+	if err := s.ScanWorkspaceRoots(); err != nil {
+		s.Logger.Errorf("[WatchProject]: Error rescanning workspace roots after restart: %s", err)
+		return
+	}
+	s.Logger.Info("[WatchProject]: restarted successfully")
+}
+
+func (s *State) WatchProject() {
 	for {
 		select {
-		case event := <-s.ConfigWatcher.Watcher.Events:
+		case event := <-s.ProjectWatcher.Watcher.Events:
 			if !s.ServerActive {
 				continue
 			}
+
 			if event.Op&fsnotify.Create == fsnotify.Create {
-				s.Logger.Infof("ConfigWatcher Create event: %s", event.Name)
-				info, err := os.Stat(event.Name)
-				if filepath.Base(event.Name) == "4913" || (err == nil && !info.IsDir() && !slices.Contains(s.DbtConfigExtensions, filepath.Ext(event.Name))) {
-					s.Logger.Debugf("ConfigWatcher: ignoring event %s", event.Name)
-					// handle special error cases that have to do with nvim way of saving
-					// files this ignore when the file is name 4913 or when a file does
-					// not have the correct extension.
-					continue
-				} else if err == nil && info.IsDir() && filepath.Base(event.Name) != "dbt_packages" {
-					// New directory: scan and watch recursively
-					s.Logger.Debugf("ConfigWatcher: Found a new directory %s. Scanning it recursively.", event.Name)
-					s.ScanAndWatchDirs([]string{event.Name}, s.FindModelFilesRecursive)
-				} else if slices.Contains(s.DbtConfigExtensions, filepath.Ext(event.Name)) {
-					s.Logger.Debugf("ConfigWatcher: Found a new file %s", event.Name)
-					s.ProcessNewConfigYaml(event.Name)
-				} else if err != nil {
-					s.Logger.Errorf("ConfigWatcher: Error in Create event: %s", err)
+				s.handleCreateEvent(event.Name)
+			}
+
+			base := filepath.Base(event.Name)
+			if event.Op&fsnotify.Remove == fsnotify.Remove {
+				if s.isConfigFile(base) {
+					s.Logger.Infof("[WatchProject]: Config Deletion event: %s", event.Name)
 					s.RemoveConfigYaml(event.Name)
+				} else if s.isModelFile(base) {
+					s.Logger.Infof("[WatchProject]: Model Deletion event: %s", event.Name)
+					s.RemoveModelFromIndex(event.Name)
 				}
 			}
 
-			if event.Op&fsnotify.Remove == fsnotify.Remove && slices.Contains(s.DbtConfigExtensions, filepath.Ext(event.Name)) {
-				s.Logger.Infof("ConfigWatcher Deletion event: %s", event.Name)
+			if event.Op&fsnotify.Write == fsnotify.Write {
+				if s.isConfigFile(base) {
+					s.Logger.Infof("[WatchProject]: Config Write event: %s", event.Name)
+					s.ProcessNewConfigYaml(event.Name)
+				} else if s.isModelFile(base) {
+					s.Logger.Infof("[WatchProject]: Model Write event: %s", event.Name)
+					// do nothing
+					continue
+				}
 			}
 
-			if event.Op&fsnotify.Write == fsnotify.Write && slices.Contains(s.DbtConfigExtensions, filepath.Ext(event.Name)) {
-				s.Logger.Infof("ConfigWatcher Write event: %s", event.Name)
-				s.ProcessNewConfigYaml(event.Name)
+			if event.Op&fsnotify.Rename == fsnotify.Rename {
+				if s.isConfigFile(base) {
+					s.Logger.Debugf("[WatchProject]: Config Renaming Event %s", event.Name)
+					// handle case
+					s.RemoveConfigYaml(event.Name)
+				} else if s.isModelFile(base) {
+					s.Logger.Debugf("[WatchProject]: Model Renaming Event %s", event.Name)
+					s.RemoveModelFromIndex(event.Name)
+				}
 			}
 
-			if event.Op&fsnotify.Rename == fsnotify.Rename && slices.Contains(s.DbtConfigExtensions, filepath.Ext(event.Name)) {
-				s.Logger.Debugf("ConfigWatcher Renaming Event %s", event.Name)
-				_ = fmt.Sprintf("%s/models", "s")
-			}
-		case err := <-s.ConfigWatcher.Watcher.Errors:
+		case err := <-s.ProjectWatcher.Watcher.Errors:
 			if !s.ServerActive {
 				continue
 			}
-			s.Logger.Errorf("ConfigWatcher error: %s", err.Error())
-			s.Logger.Info("ConfigWatcher: Attempting to restart ConfigWatcher functiontionality.")
-			s.ConfigWatcher.Watcher.Close()
-
-			newModelWatcher, err := fsnotify.NewWatcher()
-			if err != nil {
-				s.Logger.Errorf("ConfigWatcher: Error restarting the ConfigWatcher. Stopping the ConfigWatcher functionality. %s", err)
-				s.ConfigWatcher.Watcher = nil
-				break
-			}
-			s.ConfigWatcher.Watcher = newModelWatcher
-			for _, path := range s.RootPaths {
-				configDir := filepath.Join(path, s.ConfigWatcher.Root)
-				s.ScanAndWatchDirs([]string{configDir}, s.FindConfigFilesRecursive)
-			}
-			s.Logger.Info("ConfigWatcher restarted succesfully")
+			s.Logger.Errorf("[WatchProject]: error: %s", err.Error())
+			s.restartProjectWatcher()
 		}
 	}
 }

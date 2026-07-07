@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"dbt_ls/analysis"
 	"dbt_ls/logger"
@@ -32,13 +31,21 @@ func (p *InitProgram) handleStatelessEnvelope(state *analysis.State, envelope ls
 	p.handleEnvelope(state, envelope)
 }
 
-func (p *InitProgram) sendErrorResponse(state *analysis.State, id int, code int, message string, context string) error {
+func (p *InitProgram) sendErrorResponse(
+	state *analysis.State,
+	id int,
+	code int,
+	message string,
+	context string,
+) error {
 	response, err := rpc.EncodeMsg(lsp.NewErrorResponse(id, code, message))
 	if err != nil {
 		return fmt.Errorf("couldn't encode %s error response: %w", context, err)
 	}
 
-	state.Writer.Write([]byte(response))
+	if _, err := state.Writer.Write([]byte(response)); err != nil {
+		return fmt.Errorf("couldn't write %s error response: %w", context, err)
+	}
 	return nil
 }
 
@@ -53,34 +60,13 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		}
 		p.Logger.Infof("InitializeRequest. Client: %s %s", clientName, clientVersion)
 
-		state.Root = msgIn.Params.WorkspaceFolders
-
-		if len(state.Root) > 1 {
-			message := "dbt-ls does not support multi-root workspaces"
-			p.Logger.Error(message)
-			if err := p.sendErrorResponse(state, msgIn.ID, lsp.ErrorCodeInvalidParams, message, "initialize"); err != nil {
-				p.Logger.Error(err)
-				p.Logger.Error("Closing dbt-ls")
-				panic(err)
-			}
-			return
+		if err := p.checkRoot(state, msgIn); err != nil {
+			panic(err)
 		}
 
-		state.RootPaths = make([]string, len(state.Root))
-		for i, r := range state.Root {
-			path, err := analysis.WorkspacePath(r.URI)
-			if err != nil {
-				message := fmt.Sprintf("Failed to parse workspace folder URI %q: %v", r.URI, err)
-				p.Logger.Error(message)
-				if err := p.sendErrorResponse(state, msgIn.ID, lsp.ErrorCodeInvalidParams, message, "initialize"); err != nil {
-					p.Logger.Error(err)
-					p.Logger.Error("Closing dbt-ls")
-					panic(err)
-				}
-				return
-			}
-			state.RootPaths[i] = path
-			p.Logger.Infof("Root: %s (%s)", r.Name, path)
+		if err := p.parseRootURI(state, msgIn); err != nil {
+			p.Logger.Error(err)
+			return
 		}
 
 		state.ServerActive = false
@@ -92,10 +78,9 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 			}
 
 			if state.ServerActive {
-				modelsDir := filepath.Join(rootPath, state.ModelWatcher.Root)
-				state.ScanAndWatchDirs([]string{modelsDir}, state.FindModelFilesRecursive)
-				configDir := filepath.Join(rootPath, state.ConfigWatcher.Root)
-				state.ScanAndWatchDirs([]string{configDir}, state.FindConfigFilesRecursive)
+				if err := state.ScanRootPath(rootPath); err != nil {
+					p.Logger.Errorf("Error scanning workspace root %s: %s", rootPath, err)
+				}
 			}
 		}
 		p.Logger.Debugf("InitializeRequest. ServerActive status: %t", state.ServerActive)
@@ -103,14 +88,16 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		msgOut := lsp.NewInitializeResponse(msgIn.ID)
 		response, err := rpc.EncodeMsg(msgOut)
 		if err != nil {
-			err := fmt.Errorf("Couldn't encode InitializeResponse: %s", err)
+			err := fmt.Errorf("couldn't encode InitializeResponse: %s", err)
 			p.Logger.Error(err)
 			p.Logger.Error("Closing dbt-ls")
 			panic(err)
 		}
 
-		state.Writer.Write([]byte(response))
-		p.Logger.Infof("Sent InitializeResponse id: %d", msgIn.ID)
+		if _, err := state.Writer.Write([]byte(response)); err != nil {
+			p.Logger.Errorf("couldn't write InitializeResponse: %s", err)
+		}
+		p.Logger.Infof("sent InitializeResponse id: %d", msgIn.ID)
 
 	case lsp.DidOpenTextDocumentNotification:
 		if !state.ServerActive {
@@ -119,7 +106,11 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 
 		msgIn := envelope.Message.(lsp.DidOpenTextDocumentNotification)
 		p.Logger.Debugf("DidOpenTextDocumentNotification. %s", msgIn.Params.TextDocument.URI)
-		state.OpenDocument(msgIn.Params.TextDocument.URI, msgIn.Params.TextDocument.Text, msgIn.Params.TextDocument.Version)
+		state.OpenDocument(
+			msgIn.Params.TextDocument.URI,
+			msgIn.Params.TextDocument.Text,
+			msgIn.Params.TextDocument.Version,
+		)
 
 	case lsp.DidChangeTextDocumentNotification:
 		if !state.ServerActive {
@@ -127,10 +118,18 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 		}
 
 		msgIn := envelope.Message.(lsp.DidChangeTextDocumentNotification)
-		p.Logger.Debugf("DidChangeTextDocumentNotification. %s %v", msgIn.Params.TextDocument.URI, msgIn.Params.ContentChanges)
+		p.Logger.Debugf(
+			"DidChangeTextDocumentNotification. %s %v",
+			msgIn.Params.TextDocument.URI,
+			msgIn.Params.ContentChanges,
+		)
 		for _, change := range msgIn.Params.ContentChanges {
 			p.Logger.Debugf("Received change notification: %s", envelope.Contents)
-			state.UpdateDocument(msgIn.Params.TextDocument.URI, change, msgIn.Params.TextDocument.Version)
+			state.UpdateDocument(
+				msgIn.Params.TextDocument.URI,
+				change,
+				msgIn.Params.TextDocument.Version,
+			)
 		}
 
 	case lsp.WillSaveTextDocumentNotification:
@@ -140,12 +139,21 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 
 		msgIn := envelope.Message.(lsp.WillSaveTextDocumentNotification)
 		// TODO
-		p.Logger.Debugf("WillSaveTextDocumentNotification. %s %s", msgIn.Params.TextDocument.URI, msgIn.Params.TextDocument.Text)
+		p.Logger.Debugf(
+			"WillSaveTextDocumentNotification. %s %s",
+			msgIn.Params.TextDocument.URI,
+			msgIn.Params.TextDocument.Text,
+		)
 
 	case lsp.CompletionRequest:
 		msgIn := envelope.Message.(lsp.CompletionRequest)
 
-		p.Logger.Debugf("CompletionRequest. %s Line: %d, Char: %d", msgIn.Params.TextDocument.URI, msgIn.Params.Position.Line, msgIn.Params.Position.Character)
+		p.Logger.Debugf(
+			"CompletionRequest. %s Line: %d, Char: %d",
+			msgIn.Params.TextDocument.URI,
+			msgIn.Params.Position.Line,
+			msgIn.Params.Position.Character,
+		)
 
 		msg := state.TextDocumentCodeCompletion(msgIn.ID, msgIn.Params)
 		response, err := rpc.EncodeMsg(msg)
@@ -160,7 +168,12 @@ func (p *InitProgram) handleEnvelope(state *analysis.State, envelope lsp.Envelop
 	case lsp.DefinitionRequest:
 		msgIn := envelope.Message.(lsp.DefinitionRequest)
 
-		p.Logger.Debugf("DefinitionRequest. %s Line: %d, Char: %d", msgIn.Params.TextDocument.URI, msgIn.Params.Position.Line, msgIn.Params.Position.Character)
+		p.Logger.Debugf(
+			"DefinitionRequest. %s Line: %d, Char: %d",
+			msgIn.Params.TextDocument.URI,
+			msgIn.Params.Position.Line,
+			msgIn.Params.Position.Character,
+		)
 
 		msg := state.TextDocumentGoToDefinition(msgIn.ID, msgIn.Params)
 		response, err := rpc.EncodeMsg(msg)
@@ -194,7 +207,10 @@ func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelop
 	case "textDocument/didOpen":
 		var notification lsp.DidOpenTextDocumentNotification
 		if err := json.Unmarshal(contents, &notification); err != nil {
-			p.Logger.Errorf("Couldn't unmarshal contents for DidOpenTextDocumentNotification: %s", err)
+			p.Logger.Errorf(
+				"Couldn't unmarshal contents for DidOpenTextDocumentNotification: %s",
+				err,
+			)
 			return lsp.Envelope{}, err
 		}
 
@@ -205,7 +221,10 @@ func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelop
 	case "textDocument/didChange":
 		var notification lsp.DidChangeTextDocumentNotification
 		if err := json.Unmarshal(contents, &notification); err != nil {
-			p.Logger.Errorf("Couldn't unmarshal contents for DidChangeTextDocumentNotification: %s", err)
+			p.Logger.Errorf(
+				"Couldn't unmarshal contents for DidChangeTextDocumentNotification: %s",
+				err,
+			)
 			return lsp.Envelope{}, err
 		}
 
@@ -216,7 +235,10 @@ func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelop
 	case "textDocument/willSave":
 		var notification lsp.WillSaveTextDocumentNotification
 		if err := json.Unmarshal(contents, &notification); err != nil {
-			p.Logger.Errorf("Couldn't unmarshal contents for WillSaveTextDocumentNotification: %s", err)
+			p.Logger.Errorf(
+				"Couldn't unmarshal contents for WillSaveTextDocumentNotification: %s",
+				err,
+			)
 			return lsp.Envelope{}, err
 		}
 
@@ -252,18 +274,6 @@ func (p *InitProgram) parseEnvelope(method string, contents []byte) (lsp.Envelop
 	return envelope, nil
 }
 
-type InitProgram struct {
-	logFileFlag string
-	logLevel    string
-	Logger      *log.Logger
-}
-
-type Program interface {
-	handleEnvelope()
-	handleStatelessEnvelope()
-	parseEnvelope(string, []byte) lsp.Envelope
-}
-
 func main() {
 	pgm := InitProgram{}
 	flag.StringVar(&pgm.logFileFlag, "log-file", "", "Path to log file")
@@ -280,29 +290,22 @@ func main() {
 	writer := os.Stdout
 	pgm.Logger.Debug("Writer started")
 
-	modelWatcher, err := analysis.NewWatcher("models", "./models", logger)
+	projectWatcher, err := analysis.NewWatcher("project", "./models", logger)
 	if err != nil {
-		pgm.Logger.Fatalf("Error starting the modelWatcher. %s", err)
+		pgm.Logger.Fatalf("Error starting the projectWatcher. %s", err)
 	}
-	configWatcher, err := analysis.NewWatcher("config", "./", logger)
-	if err != nil {
-		pgm.Logger.Fatalf("Error starting the configWatcher. %s", err)
-	}
+	// ensures the watcher is closed, even if it has to be reinitialized by the
+	// WatchProject function error handling
+	defer projectWatcher.HandleAsyncClose(logger)
 
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Split(rpc.Split)
 	pgm.Logger.Debug("Scanner started")
 
-	state := analysis.NewState(logger, writer, modelWatcher, configWatcher)
+	state := analysis.NewState(logger, writer, projectWatcher)
 	pgm.Logger.Debug("Server State initialized")
 
-	// ensures the watcher is closed, even if it has to be reinitialized by the
-	// WatchProject function error handling
-	defer configWatcher.HandleAsyncClose(logger)
-	defer modelWatcher.HandleAsyncClose(logger)
-
-	go state.WatchConfig()
-	go state.WatchModels()
+	go state.WatchProject()
 	go state.DrainNotifications()
 
 	logger.Debug("Scanning Stdin for incoming messages")

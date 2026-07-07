@@ -45,11 +45,14 @@ type State struct {
 	Documents           map[string]*Document
 	DbtConfigMu         sync.Mutex
 	DbtConfig           DbtConfig
+	DbtRoots            []string
 	SourcesValid        bool
-	SourceFileErrors    map[string][]string // keyed by file path; guarded by DbtConfigMu
+	SourceFileErrors    map[string][]sourceFileError // keyed by file path; guarded by DbtConfigMu
 	NotifCh             chan lsp.ShowMessageNotification
 	configFileHashes    map[string]string // file path → sha256 of last-processed content
 	configFileHashesMu  sync.Mutex
+	DbtSourcesByFile    map[string]DbtSources
+	SourceTableIndex    map[sourceTableKey]map[string]sourceDecl
 	Root                []lsp.WorkspaceFolder // LSP-provided workspace folders (Name/URI)
 	RootPaths           []string              // parsed filesystem paths, index-aligned with Root
 	ServerActive        bool
@@ -57,31 +60,58 @@ type State struct {
 	DbtModels           *trie.Trie[string]
 	DbtModelExtension   string
 	DbtConfigExtensions []string
+	ModelRoot           string
+	ConfigRoot          string
 	Logger              *log.Logger
 	Writer              io.Writer
-	ModelWatcher        DbtWatcher
-	ConfigWatcher       DbtWatcher
+	ProjectWatcher      *DbtWatcher
+	watchedDirs         map[string]struct{}
+	watchedDirsMu       sync.Mutex
+}
+
+type sourceTableKey struct {
+	Source string
+	Table  string
+}
+
+type sourceDecl struct {
+	Source *DbtSource
+	Table  *DbtTable
+	File   string
+}
+
+type sourceFileError struct {
+	Key     sourceTableKey
+	Message string
 }
 
 type ScanCallback func(string) error
 
-func NewState(logger *log.Logger, writer io.Writer, modelWatcher, configWatcher *DbtWatcher) *State {
+func NewState(
+	logger *log.Logger,
+	writer io.Writer,
+	projectWatcher *DbtWatcher,
+) *State {
 	models := trie.New[string]()
 
 	return &State{
 		Documents:           map[string]*Document{},
 		SourcesValid:        true,
-		SourceFileErrors:    map[string][]string{},
+		SourceFileErrors:    map[string][]sourceFileError{},
 		NotifCh:             make(chan lsp.ShowMessageNotification, 16),
 		configFileHashes:    map[string]string{},
+		DbtSourcesByFile:    map[string]DbtSources{},
+		SourceTableIndex:    map[sourceTableKey]map[string]sourceDecl{},
 		ServerActive:        false,
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
 		DbtConfigExtensions: []string{".yml", ".yaml"},
+		ModelRoot:           "models",
+		ConfigRoot:          ".",
 		Logger:              logger,
 		Writer:              writer,
-		ModelWatcher:        *modelWatcher,
-		ConfigWatcher:       *configWatcher,
+		ProjectWatcher:      projectWatcher,
+		watchedDirs:         map[string]struct{}{},
 	}
 }
 
@@ -110,20 +140,25 @@ func (s *State) AddNewModelToIndex(file string) {
 	s.DbtModelsMu.Lock()
 	defer s.DbtModelsMu.Unlock()
 	s.Logger.Debugf("Adding file: %s", file)
-	s.DbtModels.Put(strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtModelExtension), file)
+	s.DbtModels.Put(
+		strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtModelExtension),
+		file,
+	)
 }
 
 func (s *State) RemoveModelFromIndex(file string) {
 	s.DbtModelsMu.Lock()
 	defer s.DbtModelsMu.Unlock()
 	s.Logger.Debugf("Removing file: %s", file)
-	s.DbtModels.Remove(strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtModelExtension))
+	s.DbtModels.Remove(
+		strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtModelExtension),
+	)
 }
 
 func (s *State) SetDbtProject(project DbtProject, file string) {
 	s.DbtConfigMu.Lock()
 	s.DbtConfig.Name = project.Name
-	s.assignDbtSourcesLocked(project.DbtSources, file)
+	s.updateDbtSourcesForFileLocked(project.DbtSources, file)
 	errs := s.allSourceErrorsLocked()
 	s.SourcesValid = len(errs) == 0
 	s.DbtConfigMu.Unlock()
@@ -133,7 +168,7 @@ func (s *State) SetDbtProject(project DbtProject, file string) {
 
 func (s *State) SetDbtSources(sources DbtSources, file string) {
 	s.DbtConfigMu.Lock()
-	s.assignDbtSourcesLocked(sources, file)
+	s.updateDbtSourcesForFileLocked(sources, file)
 	errs := s.allSourceErrorsLocked()
 	s.SourcesValid = len(errs) == 0
 	s.DbtConfigMu.Unlock()
@@ -141,76 +176,156 @@ func (s *State) SetDbtSources(sources DbtSources, file string) {
 	s.notifySourceState(errs)
 }
 
-func (s *State) assignDbtSourcesLocked(sources DbtSources, file string) {
-	if s.DbtConfig.Sources == nil {
-		s.DbtConfig.Sources = make(map[string]*DbtConfigSource)
-	}
+func (s *State) updateDbtSourcesForFileLocked(sources DbtSources, file string) {
+	oldSources := s.DbtSourcesByFile[file]
+	affectedKeys := affectedSourceTableKeys(oldSources, sources)
 
-	// Clear this file's previous errors and remove its tables so a reload
-	// produces a clean slate (handles both fixes and removals correctly).
-	delete(s.SourceFileErrors, file)
-	for _, configSrc := range s.DbtConfig.Sources {
-		for tabName, tab := range configSrc.Tables {
-			if tab.SourceFile == file {
-				delete(configSrc.Tables, tabName)
+	s.removeSourceDeclsForFileLocked(file)
+	s.DbtSourcesByFile[file] = sources
+	s.addSourceDeclsForFileLocked(file, sources)
+	s.recomputeAffectedSourceTablesLocked(affectedKeys)
+}
+
+func affectedSourceTableKeys(oldSources, newSources DbtSources) map[sourceTableKey]struct{} {
+	keys := map[sourceTableKey]struct{}{}
+	addKeys := func(sources DbtSources) {
+		for _, src := range sources.Sources {
+			for _, tab := range src.Tables {
+				keys[sourceTableKey{Source: src.Name, Table: tab.Name}] = struct{}{}
 			}
 		}
 	}
 
-	s.Logger.Debugf("Adding DbtSources from %s", file)
+	addKeys(oldSources)
+	addKeys(newSources)
+	return keys
+}
+
+func (s *State) addSourceDeclsForFileLocked(file string, sources DbtSources) {
 	for _, src := range sources.Sources {
-		s.Logger.Debugf("Attempting to add DbtSource %s from %s", src.Name, file)
-		s.mergeDbtSourcesLocked(src, file)
+		addSourceFileToTables(src.Tables, file)
+		for _, tab := range src.Tables {
+			key := sourceTableKey{Source: src.Name, Table: tab.Name}
+			if s.SourceTableIndex[key] == nil {
+				s.SourceTableIndex[key] = map[string]sourceDecl{}
+			}
+
+			s.SourceTableIndex[key][file] = sourceDecl{
+				Source: src,
+				Table:  tab,
+				File:   file,
+			}
+		}
 	}
+}
+
+func (s *State) removeSourceDeclsForFileLocked(file string) {
+	for key, decls := range s.SourceTableIndex {
+		delete(decls, file)
+		if len(decls) == 0 {
+			delete(s.SourceTableIndex, key)
+		}
+	}
+}
+
+func (s *State) recomputeAffectedSourceTablesLocked(keys map[sourceTableKey]struct{}) {
+	s.removeSourceErrorsForKeysLocked(keys)
+	for key := range keys {
+		s.removeDbtConfigTableLocked(key)
+
+		decls := s.SourceTableIndex[key]
+		switch len(decls) {
+		case 0:
+			continue
+		case 1:
+			for _, decl := range decls {
+				s.upsertDbtConfigTableLocked(decl)
+			}
+		default:
+			s.registerSourceConflictLocked(key, decls)
+		}
+	}
+}
+
+func (s *State) removeSourceErrorsForKeysLocked(keys map[sourceTableKey]struct{}) {
+	for file, errs := range s.SourceFileErrors {
+		kept := errs[:0]
+		for _, err := range errs {
+			if _, ok := keys[err.Key]; !ok {
+				kept = append(kept, err)
+			}
+		}
+		if len(kept) == 0 {
+			delete(s.SourceFileErrors, file)
+		} else {
+			s.SourceFileErrors[file] = kept
+		}
+	}
+}
+
+func (s *State) removeDbtConfigTableLocked(key sourceTableKey) {
+	if s.DbtConfig.Sources == nil {
+		return
+	}
+
+	src := s.DbtConfig.Sources[key.Source]
+	if src == nil {
+		return
+	}
+
+	delete(src.Tables, key.Table)
+	if len(src.Tables) == 0 {
+		delete(s.DbtConfig.Sources, key.Source)
+	}
+}
+
+func (s *State) upsertDbtConfigTableLocked(decl sourceDecl) {
+	if s.DbtConfig.Sources == nil {
+		s.DbtConfig.Sources = map[string]*DbtConfigSource{}
+	}
+
+	src := s.DbtConfig.Sources[decl.Source.Name]
+	if src == nil {
+		src = &DbtConfigSource{
+			Name:     decl.Source.Name,
+			Database: decl.Source.Database,
+			Schema:   decl.Source.Schema,
+			Tables:   map[string]*DbtTable{},
+		}
+		s.DbtConfig.Sources[decl.Source.Name] = src
+	}
+	src.Database = decl.Source.Database
+	src.Schema = decl.Source.Schema
+
+	src.Tables[decl.Table.Name] = decl.Table
+}
+
+func (s *State) registerSourceConflictLocked(key sourceTableKey, decls map[string]sourceDecl) {
+	files := make([]string, 0, len(decls))
+	for file := range decls {
+		files = append(files, file)
+	}
+	slices.Sort(files)
+
+	msg := fmt.Sprintf(
+		"Table %s.%s already exists. Conflicting files: %s",
+		key.Source,
+		key.Table,
+		strings.Join(files, ", "),
+	)
+
+	for _, file := range files {
+		s.SourceFileErrors[file] = append(s.SourceFileErrors[file], sourceFileError{
+			Key:     key,
+			Message: msg,
+		})
+	}
+	s.Logger.Error(msg)
 }
 
 func addSourceFileToTables(tables []*DbtTable, file string) {
 	for _, tab := range tables {
 		tab.SourceFile = file
-	}
-}
-
-func (s *State) processDbtTablesLocked(srcName string, tables []*DbtTable, file string) {
-	existingTables := s.DbtConfig.Sources[srcName].Tables
-	for _, tab := range tables {
-		existing, ok := existingTables[tab.Name]
-		if ok && existing.SourceFile == file {
-			s.Logger.Debugf("Table %s from file %s already processed. Ignoring.", tab.Name, file)
-		} else if ok {
-			msg := fmt.Sprintf("Table %s already exists. Conflicting files: %s, %s", tab.Name, file, existing.SourceFile)
-			s.SourceFileErrors[file] = append(s.SourceFileErrors[file], msg)
-			s.Logger.Error(msg)
-		} else {
-			s.Logger.Debugf("Merging table %s from %s into existing config.", tab.Name, file)
-			existingTables[tab.Name] = tab
-		}
-	}
-}
-
-func (s *State) mergeDbtSourcesLocked(src *DbtSource, file string) {
-	// Always stamp SourceFile on the incoming tables before any branch so
-	// that the idempotency guard in processDbtTablesLocked (existing.SourceFile == file)
-	// and the clear-on-reload logic in assignDbtSourcesLocked both work correctly.
-	addSourceFileToTables(src.Tables, file)
-
-	existing, ok := s.DbtConfig.Sources[src.Name]
-	if !ok {
-		s.Logger.Debugf("Source %s does not exist. Creating", src.Name)
-
-		existing = &DbtConfigSource{
-			Name:     src.Name,
-			Database: src.Database,
-			Schema:   src.Schema,
-			Tables:   make(map[string]*DbtTable),
-		}
-		for _, tab := range src.Tables {
-			existing.Tables[tab.Name] = tab
-		}
-
-		s.DbtConfig.Sources[src.Name] = existing
-	} else {
-		s.Logger.Debugf("Source %s already exists. Merging", src.Name)
-		s.processDbtTablesLocked(src.Name, src.Tables, file)
 	}
 }
 
@@ -254,6 +369,29 @@ func (s *State) RemoveConfigYaml(file string) {
 	s.Logger.Debugf("Processing config file (removing step): %s", file)
 }
 
+func (s *State) addWatchDir(path string) error {
+	if s.ProjectWatcher == nil || s.ProjectWatcher.Watcher == nil {
+		return nil
+	}
+
+	s.watchedDirsMu.Lock()
+	defer s.watchedDirsMu.Unlock()
+	if _, ok := s.watchedDirs[path]; ok {
+		return nil
+	}
+	if err := s.ProjectWatcher.Watcher.Add(path); err != nil {
+		return err
+	}
+	s.watchedDirs[path] = struct{}{}
+	return nil
+}
+
+func (s *State) resetWatchedDirs() {
+	s.watchedDirsMu.Lock()
+	defer s.watchedDirsMu.Unlock()
+	s.watchedDirs = map[string]struct{}{}
+}
+
 func (s *State) findFilesRecursive(root string, exts []string) ([]string, error) {
 	s.Logger.Debugf("Starting recursive search on %s", root)
 	var matchingFiles []string
@@ -263,14 +401,16 @@ func (s *State) findFilesRecursive(root string, exts []string) ([]string, error)
 			s.Logger.Errorf("Error while looking at %s: %s", path, err)
 			return err // Handle errors during traversal
 		}
-		if d.IsDir() && filepath.Base(path) == "dbt_packages" {
-			s.Logger.Debug("Ignoring dbt_packages branch of the tree")
+		base := filepath.Base(path)
+		if s.isSkippableDir(base, d) {
+			s.Logger.Debugf("Ignoring %s branch of the tree", base)
 			return fs.SkipDir
 		}
 		if d.IsDir() {
-			s.Logger.Debugf("Found dir %s. Adding to Watcher", path)
-			s.ModelWatcher.Watcher.Add(path)
-			s.ConfigWatcher.Watcher.Add(path)
+			s.Logger.Debugf("Found dir %s. Adding to ProjectWatcher", path)
+			if err := s.addWatchDir(path); err != nil {
+				s.Logger.Errorf("Error adding %s to ProjectWatcher: %s", path, err)
+			}
 		} else if slices.Contains(exts, filepath.Ext(path)) {
 			s.Logger.Debugf("Found %s file %s. Selected for LSP indexing", filepath.Ext(path), path)
 			matchingFiles = append(matchingFiles, path)
@@ -320,12 +460,38 @@ func (s *State) FindConfigFilesRecursive(dirPattern string) error {
 	return nil
 }
 
+func (s *State) ScanProjectFiles(root string) error {
+	if err := s.FindModelFilesRecursive(root); err != nil {
+		return err
+	}
+	return s.FindConfigFilesRecursive(root)
+}
+
+func (s *State) ScanRootPath(rootPath string) error {
+	modelDir := filepath.Join(rootPath, s.ModelRoot)
+	if err := s.ScanAndWatchDirs([]string{modelDir}, s.FindModelFilesRecursive); err != nil {
+		return err
+	}
+
+	configDir := filepath.Join(rootPath, s.ConfigRoot)
+	return s.ScanAndWatchDirs([]string{configDir}, s.FindConfigFilesRecursive)
+}
+
+func (s *State) ScanWorkspaceRoots() error {
+	for _, rootPath := range s.RootPaths {
+		if err := s.ScanRootPath(rootPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *State) ScanAndWatchDirs(roots []string, callback ScanCallback) error {
 	for _, dir := range roots {
-		s.Logger.Debugf("Scanning for models in: %s", dir)
-		dirPattern := fmt.Sprintf("%s", dir)
-
-		callback(dirPattern)
+		s.Logger.Debugf("Scanning in: %s", dir)
+		if err := callback(dir); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -340,7 +506,11 @@ func (s *State) OpenDocument(uri, text string, version int) {
 	}
 }
 
-func (s *State) applyInsertion(doc *Document, offset int, change lsp.TextDocumentContentChangeEvent) {
+func (s *State) applyInsertion(
+	doc *Document,
+	offset int,
+	change lsp.TextDocumentContentChangeEvent,
+) {
 	doc.Data.Insert(offset, []rune(change.Text))
 	(*doc.EditCount)++
 }
@@ -396,7 +566,10 @@ func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeE
 	s.applyUpdate(doc, change, version)
 }
 
-func (s *State) TextDocumentGoToDefinition(id int, params lsp.DefinitionParams) lsp.DefinitionResponse {
+func (s *State) TextDocumentGoToDefinition(
+	id int,
+	params lsp.DefinitionParams,
+) lsp.DefinitionResponse {
 	response := lsp.DefinitionResponse{
 		Response: lsp.Response{
 			RPC: "2.0",
@@ -439,9 +612,16 @@ func (s *State) TextDocumentGoToDefinition(id int, params lsp.DefinitionParams) 
 // allSourceErrorsLocked flattens SourceFileErrors into a single slice.
 // Must be called with DbtConfigMu held.
 func (s *State) allSourceErrorsLocked() []string {
+	seen := map[string]struct{}{}
 	var all []string
 	for _, errs := range s.SourceFileErrors {
-		all = append(all, errs...)
+		for _, err := range errs {
+			if _, ok := seen[err.Message]; ok {
+				continue
+			}
+			seen[err.Message] = struct{}{}
+			all = append(all, err.Message)
+		}
 	}
 	return all
 }
