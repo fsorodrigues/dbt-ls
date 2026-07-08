@@ -1,5 +1,7 @@
 package lsp
 
+const CompletionItemKindReference = 18
+
 type CompletionParams struct {
 	TextDocumentPositionParams
 }

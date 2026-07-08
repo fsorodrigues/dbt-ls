@@ -28,7 +28,7 @@ func (s *State) createRefResponse(lineContent string, params lsp.CompletionParam
 			}
 			response.Result.Items = append(response.Result.Items, lsp.CompletionItem{
 				Label:         modKey,
-				Kind:          18,
+				Kind:          lsp.CompletionItemKindReference,
 				Detail:        "dbt Model",
 				Documentation: modVal,
 				TextEdit: lsp.CompletionTextEdit{
@@ -71,7 +71,7 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 		for _, name := range sourceNamesWithPrefix(s.DbtConfig, prefix) {
 			response.Result.Items = append(response.Result.Items, lsp.CompletionItem{
 				Label:  name,
-				Kind:   18,
+				Kind:   lsp.CompletionItemKindReference,
 				Detail: "dbt Source",
 				TextEdit: lsp.CompletionTextEdit{
 					Range: lsp.TextDocumentPositionRange{
@@ -95,7 +95,7 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 		for _, tblName := range tableNamesWithPrefix(src, prefix) {
 			response.Result.Items = append(response.Result.Items, lsp.CompletionItem{
 				Label:  tblName,
-				Kind:   18,
+				Kind:   lsp.CompletionItemKindReference,
 				Detail: "dbt Source Table",
 				TextEdit: lsp.CompletionTextEdit{
 					Range: lsp.TextDocumentPositionRange{
@@ -161,7 +161,11 @@ func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) 
 		return *response
 	}
 
-	doc := s.Documents[params.TextDocument.URI]
+	doc, ok := s.Documents[params.TextDocument.URI]
+	if !ok || doc == nil {
+		s.Logger.Errorf("Completion requested for unopened document: %s", params.TextDocument.URI)
+		return *response
+	}
 	line := getLine(doc.Data, params.Position.Line)
 	completionType, err := parseCompletionType(line)
 

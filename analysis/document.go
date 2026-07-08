@@ -15,9 +15,7 @@ type Document struct {
 }
 
 func newCounter(x int) *int {
-	count := new(int)
-	*count = x
-	return count
+	return &x
 }
 
 func (s *State) OpenDocument(uri, text string, version int) {
@@ -78,7 +76,11 @@ func (s *State) applyUpdate(doc *Document, change lsp.TextDocumentContentChangeE
 }
 
 func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEvent, version int) {
-	doc := s.Documents[uri]
+	doc, ok := s.Documents[uri]
+	if !ok || doc == nil {
+		s.Logger.Errorf("Update requested for unopened document: %s", uri)
+		return
+	}
 	changeContents, err := json.Marshal(change.Range)
 	if err != nil {
 		s.Logger.Errorf("Error creating json from change.Range: %s", err)

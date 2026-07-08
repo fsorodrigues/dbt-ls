@@ -1,5 +1,7 @@
 package lsp
 
+const TextDocumentSyncKindIncremental = 2
+
 type (
 	ClientInfo struct {
 		Name    string `json:"name"`
@@ -68,7 +70,7 @@ func NewInitializeResponse(id int) InitializeResponse {
 				TextDocumentSync: TextDocumentSyncCapability{
 					OpenClose: true,
 					WillSave:  true,
-					Change:    2,
+					Change:    TextDocumentSyncKindIncremental,
 				},
 				CompletionProvider: CompletionProviderCapability{
 					TriggerCharacters: []rune("."),

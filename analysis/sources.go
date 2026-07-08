@@ -211,12 +211,18 @@ func (s *State) ProcessNewConfigYaml(file string) {
 	if basename == "dbt_project" {
 		project := DbtProject{}
 		s.Logger.Debugf("Unmarshaling dbt_project: %s", file)
-		yaml.Unmarshal(data, &project)
+		if err := yaml.Unmarshal(data, &project); err != nil {
+			s.Logger.Errorf("Error unmarshaling dbt_project %s: %s", file, err)
+			return
+		}
 		s.SetDbtProject(project, file)
 	} else {
 		sources := DbtSources{}
 		s.Logger.Debugf("Unmarshaling yml config file: %s", file)
-		yaml.Unmarshal(data, &sources)
+		if err := yaml.Unmarshal(data, &sources); err != nil {
+			s.Logger.Errorf("Error unmarshaling yml config file %s: %s", file, err)
+			return
+		}
 		s.SetDbtSources(sources, file)
 	}
 }
