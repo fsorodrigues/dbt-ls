@@ -21,6 +21,16 @@ var methodHandlers = map[string]methodHandler{
 		handle:     handleInitialize,
 		stateful:   true,
 	},
+	"shutdown": {
+		newMessage: func() lsp.ClientMessage { return &lsp.ShutdownRequest{} },
+		handle:     handleShutdown,
+		stateful:   true,
+	},
+	"exit": {
+		newMessage: func() lsp.ClientMessage { return &lsp.ExitNotification{} },
+		handle:     handleExit,
+		stateful:   true,
+	},
 	"textDocument/didOpen": {
 		newMessage: func() lsp.ClientMessage { return &lsp.DidOpenTextDocumentNotification{} },
 		handle:     handleDidOpen,
