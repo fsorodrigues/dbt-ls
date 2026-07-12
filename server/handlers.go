@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"os"
 
 	"dbt_ls/analysis"
 	"dbt_ls/lsp"
@@ -55,6 +56,40 @@ func handleInitialize(s *Server, state *analysis.State, raw lsp.ClientMessage, _
 		s.Logger.Errorf("couldn't write InitializeResponse: %s", err)
 	}
 	s.Logger.Infof("sent InitializeResponse id: %d", msgIn.ID)
+}
+
+func handleShutdown(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {
+	msgIn := raw.(*lsp.ShutdownRequest)
+
+	s.startShutdown(state)
+	s.Logger.Debugf("ShutdownRequest. ServerActive status: %t", state.ServerActive)
+
+	msgOut := lsp.NewShutdownResponse(msgIn.ID)
+	response, err := rpc.EncodeMsg(msgOut)
+	if err != nil {
+		err := fmt.Errorf("couldn't encode ShutdownResponse: %s", err)
+		s.Logger.Error(err)
+		return
+	}
+
+	// TODO: implement the error messaging on shutdown
+
+	if _, err := state.Writer.Write([]byte(response)); err != nil {
+		s.Logger.Errorf("couldn't write ShutdownResponse %s", err)
+	}
+	s.Logger.Infof("sent ShutdownResponse id: %d", msgIn.ID)
+}
+
+func handleExit(s *Server, state *analysis.State, _ lsp.ClientMessage, contents []byte) {
+	if s.Cancel != nil {
+		s.Cancel()
+	}
+	state.ProjectWatcher.Close()
+
+	if state.ShutdownRequested {
+		os.Exit(0)
+	}
+	os.Exit(1)
 }
 
 func handleDidOpen(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {

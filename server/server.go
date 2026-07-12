@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -12,6 +13,7 @@ import (
 
 type Server struct {
 	Logger *log.Logger
+	Cancel context.CancelFunc
 }
 
 func (s *Server) checkRoot(state *analysis.State, msgIn lsp.InitializeRequest) error {
@@ -61,4 +63,11 @@ func (s *Server) parseRootURI(state *analysis.State, msgIn lsp.InitializeRequest
 		s.Logger.Infof("Root: %s (%s)", r.Name, path)
 	}
 	return nil
+}
+
+func (s *Server) startShutdown(state *analysis.State) {
+	state.Shutdown()
+	if s.Cancel != nil {
+		s.Cancel()
+	}
 }

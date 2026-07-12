@@ -41,6 +41,7 @@ type State struct {
 	Root                []lsp.WorkspaceFolder // LSP-provided workspace folders (Name/URI)
 	RootPaths           []string              // parsed filesystem paths, index-aligned with Root
 	ServerActive        bool
+	ShutdownRequested   bool
 	DbtModelsMu         sync.Mutex
 	DbtModels           *trie.Trie[string]
 	DbtModelExtension   string
@@ -86,6 +87,7 @@ func NewState(
 		DbtSourcesByFile:    map[string]DbtSources{},
 		SourceTableIndex:    map[sourceTableKey]map[string]sourceDecl{},
 		ServerActive:        false,
+		ShutdownRequested:   false,
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
 		DbtConfigExtensions: []string{".yml", ".yaml"},
@@ -109,4 +111,9 @@ func (s *State) IsDbtProject(rootPath string) bool {
 	}
 
 	return false
+}
+
+func (s *State) Shutdown() {
+	s.ServerActive = false
+	s.ShutdownRequested = true
 }
