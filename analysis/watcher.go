@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
@@ -107,10 +108,19 @@ func (s *State) restartProjectWatcher() {
 	s.Logger.Info("[WatchProject]: restarted successfully")
 }
 
-func (s *State) WatchProject() {
+func (s *State) WatchProject(ctx context.Context) {
 	for {
 		select {
-		case event := <-s.ProjectWatcher.Watcher.Events:
+		case <-ctx.Done():
+			s.Logger.Debug("[WatchProject]: stopped")
+			return
+
+		case event, ok := <-s.ProjectWatcher.Watcher.Events:
+			if !ok {
+				s.Logger.Debug("[WatchProject]: events channel closed")
+				return
+			}
+
 			if !s.ServerActive {
 				continue
 			}
@@ -152,7 +162,12 @@ func (s *State) WatchProject() {
 				}
 			}
 
-		case err := <-s.ProjectWatcher.Watcher.Errors:
+		case err, ok := <-s.ProjectWatcher.Watcher.Errors:
+			if !ok {
+				s.Logger.Debug("[WatchProject]: errors channel closed")
+				return
+			}
+
 			if !s.ServerActive {
 				continue
 			}
