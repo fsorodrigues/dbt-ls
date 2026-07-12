@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"os"
 
@@ -31,6 +32,10 @@ func main() {
 	writer := os.Stdout
 	srv.Logger.Debug("Writer started")
 
+	ctx, cancel := context.WithCancel(context.Background())
+	srv.Cancel = cancel
+	defer cancel()
+
 	projectWatcher, err := analysis.NewWatcher("project", "./models", logger)
 	if err != nil {
 		srv.Logger.Fatalf("Error starting the projectWatcher. %s", err)
@@ -46,8 +51,8 @@ func main() {
 	state := analysis.NewState(logger, writer, projectWatcher)
 	srv.Logger.Debug("Server State initialized")
 
-	go state.WatchProject()
-	go state.DrainNotifications()
+	go state.WatchProject(ctx)
+	go state.DrainNotifications(ctx)
 
 	logger.Debug("Scanning Stdin for incoming messages")
 	for scanner.Scan() {
@@ -62,6 +67,7 @@ func main() {
 			srv.Logger.Debugf("Ignoring unsupported method: %s", method)
 		}
 	}
+	logger.Debug("Stopped Stdin scan")
 
 	if err := scanner.Err(); err != nil {
 		srv.Logger.Fatalf("Error scanning stdin: %s", err)

@@ -1,6 +1,9 @@
 package analysis
 
 import (
+	"context"
+	"strings"
+
 	"dbt_ls/lsp"
 	"dbt_ls/rpc"
 )
@@ -29,21 +32,32 @@ func (s *State) notifySourceState(errs []string) {
 	if len(errs) == 0 {
 		return
 	}
-	msg := "dbt-ls: source completion unavailable — config errors detected:\n"
+	var msg strings.Builder
+	msg.WriteString("dbt-ls: source completion unavailable — config errors detected:\n")
 	for _, e := range errs {
-		msg += "  • " + e + "\n"
+		msg.WriteString("  • " + e + "\n")
 	}
 	s.NotifCh <- lsp.ShowMessageNotification{
 		Notification: lsp.Notification{Method: "window/showMessage"},
-		Params:       lsp.ShowMessageParams{Type: lsp.MessageTypeWarning, Message: msg},
+		Params:       lsp.ShowMessageParams{Type: lsp.MessageTypeWarning, Message: msg.String()},
 	}
 }
 
 // DrainNotifications reads from NotifCh and writes window/showMessage
 // notifications to the client. Run this as a long-lived goroutine.
-func (s *State) DrainNotifications() {
-	for notif := range s.NotifCh {
-		s.sendShowMessage(notif.Params.Type, notif.Params.Message)
+func (s *State) DrainNotifications(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			s.Logger.Debug("Stopped notification drain")
+			return
+
+		case notif, ok := <-s.NotifCh:
+			if !ok {
+				return
+			}
+			s.sendShowMessage(notif.Params.Type, notif.Params.Message)
+		}
 	}
 }
 
