@@ -71,8 +71,6 @@ func handleShutdown(s *Server, state *analysis.State, raw lsp.ClientMessage, _ [
 		return
 	}
 
-	// TODO: implement the error messaging on shutdown
-
 	if _, err := state.Writer.Write([]byte(response)); err != nil {
 		s.Logger.Errorf("couldn't write ShutdownResponse %s", err)
 	}
