@@ -79,7 +79,7 @@ func (s *Server) handleMethod(
 	contents []byte,
 	handler methodHandler,
 ) {
-	s.Logger.Infof("Received message with method: %s", method)
+	s.Logger.Debugf("Received message with method: %s", method)
 	msg := handler.newMessage()
 	if err := json.Unmarshal(contents, msg); err != nil {
 		s.Logger.Errorf("Couldn't unmarshal contents for %s: %s", method, err)

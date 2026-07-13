@@ -35,23 +35,23 @@ func (s *State) findFilesRecursive(root string, exts []string) ([]string, error)
 	s.Logger.Debugf("Starting recursive search on %s", root)
 	var matchingFiles []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		s.Logger.Debugf("Looking at %s", path)
+		s.Logger.Tracef("Looking at %s", path)
 		if err != nil {
 			s.Logger.Errorf("Error while looking at %s: %s", path, err)
 			return err // Handle errors during traversal
 		}
 		base := filepath.Base(path)
 		if s.isSkippableDir(base, d) {
-			s.Logger.Debugf("Ignoring %s branch of the tree", base)
+			s.Logger.Tracef("Ignoring %s branch of the tree", base)
 			return fs.SkipDir
 		}
 		if d.IsDir() {
-			s.Logger.Debugf("Found dir %s. Adding to ProjectWatcher", path)
+			s.Logger.Tracef("Found dir %s. Adding to ProjectWatcher", path)
 			if err := s.addWatchDir(path); err != nil {
 				s.Logger.Errorf("Error adding %s to ProjectWatcher: %s", path, err)
 			}
 		} else if slices.Contains(exts, filepath.Ext(path)) {
-			s.Logger.Debugf("Found %s file %s. Selected for LSP indexing", filepath.Ext(path), path)
+			s.Logger.Tracef("Found %s file %s. Selected for LSP indexing", filepath.Ext(path), path)
 			matchingFiles = append(matchingFiles, path)
 		}
 		return nil

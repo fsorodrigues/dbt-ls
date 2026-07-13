@@ -103,7 +103,7 @@ func NewState(
 func (s *State) IsDbtProject(rootPath string) bool {
 	for _, ext := range s.DbtConfigExtensions {
 		file := fmt.Sprintf("%s/dbt_project%s", rootPath, ext)
-		s.Logger.Debugf("Testing for %s", file)
+		s.Logger.Tracef("Testing for %s", file)
 		if _, err := os.Stat(file); err == nil {
 			s.Logger.Debugf("Root marker identified. %s found", file)
 			return true

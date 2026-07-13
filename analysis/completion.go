@@ -16,11 +16,11 @@ type SourceCompletionContext struct {
 
 func (s *State) createRefResponse(lineContent string, params lsp.CompletionParams, response *lsp.CompletionResponse) {
 	modelRef, check := extractModelRefUnderCursor(lineContent, params.Position)
-	s.Logger.Debugf("Check: %t. Search: %s. Models: %+v", check, modelRef, s.DbtModels)
+	s.Logger.Tracef("Check: %t. Search: %s. Models: %+v", check, modelRef, s.DbtModels)
 
 	if check {
 		models := s.DbtModels.KeysWithPrefix(strings.ToLower(modelRef))
-		s.Logger.Debugf("Found: %s", models)
+		s.Logger.Tracef("Found: %s", models)
 		for _, modKey := range models {
 			modVal, ok := s.DbtModels.Get(modKey)
 			if !ok {
@@ -43,17 +43,17 @@ func (s *State) createRefResponse(lineContent string, params lsp.CompletionParam
 				},
 			})
 		}
-		s.Logger.Debugf("TextDocumentCodeCompletion (Ref) ready. Contains %d items", len(response.Result.Items))
+		s.Logger.Tracef("TextDocumentCodeCompletion (Ref) ready. Contains %d items", len(response.Result.Items))
 	} else {
-		s.Logger.Debugf("Cannot parse line contents for Ref completion: %s", lineContent)
+		s.Logger.Tracef("Cannot parse line contents for Ref completion: %s", lineContent)
 	}
 }
 
 func (s *State) createSourceResponse(lineContent string, params lsp.CompletionParams, response *lsp.CompletionResponse) {
 	ctx, check := extractSourceContextUnderCursor(lineContent, params.Position)
-	s.Logger.Debugf("Source context: %+v, check: %t", ctx, check)
+	s.Logger.Tracef("Source context: %+v, check: %t", ctx, check)
 	if !check {
-		s.Logger.Debugf("Cannot parse line contents for Source completion: %s", lineContent)
+		s.Logger.Tracef("Cannot parse line contents for Source completion: %s", lineContent)
 		return
 	}
 
@@ -88,7 +88,7 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 	case "table_name":
 		src := sourceByName(s.DbtConfig, ctx.SourceName)
 		if src == nil {
-			s.Logger.Debugf("No source named %q found for table completion", ctx.SourceName)
+			s.Logger.Tracef("No source named %q found for table completion", ctx.SourceName)
 			return
 		}
 		prefix := ctx.TablePrefix
@@ -111,7 +111,7 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 		}
 	}
 
-	s.Logger.Debugf("TextDocumentCodeCompletion (Source) ready. Contains %d items", len(response.Result.Items))
+	s.Logger.Tracef("TextDocumentCodeCompletion (Source) ready. Contains %d items", len(response.Result.Items))
 }
 
 func sourceNamesWithPrefix(cfg DbtConfig, prefix string) []string {
@@ -170,7 +170,7 @@ func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) 
 	completionType, err := parseCompletionType(line)
 
 	if err == nil {
-		s.Logger.Debugf("Completion Type: %s", completionType)
+		s.Logger.Tracef("Completion Type: %s", completionType)
 		switch completionType {
 		case "ref":
 			s.createRefResponse(line, params, response)

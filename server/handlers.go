@@ -112,13 +112,13 @@ func handleDidChange(s *Server, state *analysis.State, raw lsp.ClientMessage, co
 	}
 
 	msgIn := raw.(*lsp.DidChangeTextDocumentNotification)
-	s.Logger.Debugf(
+	s.Logger.Tracef(
 		"DidChangeTextDocumentNotification. %s %v",
 		msgIn.Params.TextDocument.URI,
 		msgIn.Params.ContentChanges,
 	)
 	for _, change := range msgIn.Params.ContentChanges {
-		s.Logger.Debugf("Received change notification: %s", contents)
+		s.Logger.Tracef("Received change notification: %s", contents)
 		state.UpdateDocument(
 			msgIn.Params.TextDocument.URI,
 			change,
@@ -134,7 +134,7 @@ func handleWillSave(s *Server, state *analysis.State, raw lsp.ClientMessage, _ [
 
 	msgIn := raw.(*lsp.WillSaveTextDocumentNotification)
 	// TODO
-	s.Logger.Debugf(
+	s.Logger.Tracef(
 		"WillSaveTextDocumentNotification. %s %s",
 		msgIn.Params.TextDocument.URI,
 		msgIn.Params.TextDocument.Text,
@@ -144,7 +144,7 @@ func handleWillSave(s *Server, state *analysis.State, raw lsp.ClientMessage, _ [
 func handleCompletion(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {
 	msgIn := raw.(*lsp.CompletionRequest)
 
-	s.Logger.Debugf(
+	s.Logger.Tracef(
 		"CompletionRequest. %s Line: %d, Char: %d",
 		msgIn.Params.TextDocument.URI,
 		msgIn.Params.Position.Line,
@@ -157,14 +157,14 @@ func handleCompletion(s *Server, state *analysis.State, raw lsp.ClientMessage, _
 		s.Logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
 	}
 
-	s.Logger.Debugf("CompletionResponse. %s", response)
+	s.Logger.Tracef("CompletionResponse. %s", response)
 	state.Writer.Write([]byte(response))
 }
 
 func handleDefinition(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {
 	msgIn := raw.(*lsp.DefinitionRequest)
 
-	s.Logger.Debugf(
+	s.Logger.Tracef(
 		"DefinitionRequest. %s Line: %d, Char: %d",
 		msgIn.Params.TextDocument.URI,
 		msgIn.Params.Position.Line,
@@ -177,6 +177,6 @@ func handleDefinition(s *Server, state *analysis.State, raw lsp.ClientMessage, _
 		s.Logger.Errorf("Couldn't rpc encode the CompletionResponse message: %s", err)
 	}
 
-	s.Logger.Debugf("CompletionResponse. %s", response)
+	s.Logger.Tracef("CompletionResponse. %s", response)
 	state.Writer.Write([]byte(response))
 }

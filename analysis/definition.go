@@ -27,11 +27,11 @@ func (s *State) TextDocumentGoToDefinition(
 		return response
 	}
 	line := getLine(doc.Data, params.Position.Line)
-	s.Logger.Debugf("Looking for prefix with model reference in line %s", line)
+	s.Logger.Tracef("Looking for prefix with model reference in line %s", line)
 	modelRef, check := extractModelRefUnderCursor(string(line), params.Position)
 
 	if check {
-		s.Logger.Debugf("Found model reference %s in line", modelRef)
+		s.Logger.Tracef("Found model reference %s in line", modelRef)
 		model, ok := s.DbtModels.Get(strings.ToLower(modelRef))
 		if ok {
 			response.Result = &lsp.DefinitionLocation{

@@ -72,7 +72,7 @@ func (s *State) applyUpdate(doc *Document, change lsp.TextDocumentContentChangeE
 
 	doc.Version = version
 
-	s.Logger.Debugf("New version on Update: %d", doc.Version)
+	s.Logger.Tracef("New version on Update: %d", doc.Version)
 }
 
 func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEvent, version int) {
@@ -86,8 +86,8 @@ func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeE
 		s.Logger.Errorf("Error creating json from change.Range: %s", err)
 	}
 
-	s.Logger.Debugf("Document %s updated.", uri)
-	s.Logger.Debugf("Text: %s", change.Text)
-	s.Logger.Debugf("Text: %v", string(changeContents))
+	s.Logger.Tracef("Document %s updated.", uri)
+	s.Logger.Tracef("Text: %s", change.Text)
+	s.Logger.Tracef("Text: %v", string(changeContents))
 	s.applyUpdate(doc, change, version)
 }

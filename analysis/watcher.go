@@ -47,7 +47,7 @@ func NewWatcher(t, root string, logger *logger.Logger) (*DbtWatcher, error) {
 }
 
 func (s *State) handleCreateEvent(path string) {
-	s.Logger.Infof("[WatchProject]: Create event: %s", path)
+	s.Logger.Tracef("[WatchProject]: Create event: %s", path)
 	info, err := os.Stat(path)
 	if err != nil {
 		s.Logger.Errorf("[WatchProject]: Error in Create event: %s", err)
@@ -56,16 +56,16 @@ func (s *State) handleCreateEvent(path string) {
 
 	base := filepath.Base(path)
 	if s.isSkippableTempArtifact(base) {
-		s.Logger.Debugf("[WatchProject]: ignoring temp artifact %s", path)
+		s.Logger.Tracef("[WatchProject]: ignoring temp artifact %s", path)
 		return
 	}
 
 	if info.IsDir() {
 		if s.isSkippableDir(base, info) {
-			s.Logger.Debugf("[WatchProject]: ignoring skippable dir %s", path)
+			s.Logger.Tracef("[WatchProject]: ignoring skippable dir %s", path)
 			return
 		}
-		s.Logger.Debugf("[WatchProject]: Found new directory %s. Scanning recursively.", path)
+		s.Logger.Tracef("[WatchProject]: Found new directory %s. Scanning recursively.", path)
 		if err := s.ScanProjectFiles(path); err != nil {
 			s.Logger.Errorf("[WatchProject]: Error scanning new directory %s: %s", path, err)
 		}
@@ -73,17 +73,17 @@ func (s *State) handleCreateEvent(path string) {
 	}
 
 	if s.isConfigFile(base) {
-		s.Logger.Debugf("[WatchProject]: Found new config file %s", path)
+		s.Logger.Tracef("[WatchProject]: Found new config file %s", path)
 		s.ProcessNewConfigYaml(path)
 		return
 	}
 	if s.isModelFile(base) {
-		s.Logger.Debugf("[WatchProject]: Found new model file %s", path)
+		s.Logger.Tracef("[WatchProject]: Found new model file %s", path)
 		s.AddNewModelToIndex(path)
 		return
 	}
 
-	s.Logger.Debugf("[WatchProject]: ignoring unsupported create event %s", path)
+	s.Logger.Tracef("[WatchProject]: ignoring unsupported create event %s", path)
 }
 
 func (s *State) restartProjectWatcher() {
@@ -133,20 +133,20 @@ func (s *State) WatchProject(ctx context.Context) {
 			base := filepath.Base(event.Name)
 			if event.Op&fsnotify.Remove == fsnotify.Remove {
 				if s.isConfigFile(base) {
-					s.Logger.Infof("[WatchProject]: Config Deletion event: %s", event.Name)
+					s.Logger.Tracef("[WatchProject]: Config Deletion event: %s", event.Name)
 					s.RemoveConfigYaml(event.Name)
 				} else if s.isModelFile(base) {
-					s.Logger.Infof("[WatchProject]: Model Deletion event: %s", event.Name)
+					s.Logger.Tracef("[WatchProject]: Model Deletion event: %s", event.Name)
 					s.RemoveModelFromIndex(event.Name)
 				}
 			}
 
 			if event.Op&fsnotify.Write == fsnotify.Write {
 				if s.isConfigFile(base) {
-					s.Logger.Infof("[WatchProject]: Config Write event: %s", event.Name)
+					s.Logger.Tracef("[WatchProject]: Config Write event: %s", event.Name)
 					s.ProcessNewConfigYaml(event.Name)
 				} else if s.isModelFile(base) {
-					s.Logger.Infof("[WatchProject]: Model Write event: %s", event.Name)
+					s.Logger.Tracef("[WatchProject]: Model Write event: %s", event.Name)
 					// do nothing
 					continue
 				}
@@ -154,11 +154,11 @@ func (s *State) WatchProject(ctx context.Context) {
 
 			if event.Op&fsnotify.Rename == fsnotify.Rename {
 				if s.isConfigFile(base) {
-					s.Logger.Debugf("[WatchProject]: Config Renaming Event %s", event.Name)
+					s.Logger.Tracef("[WatchProject]: Config Renaming Event %s", event.Name)
 					// handle case
 					s.RemoveConfigYaml(event.Name)
 				} else if s.isModelFile(base) {
-					s.Logger.Debugf("[WatchProject]: Model Renaming Event %s", event.Name)
+					s.Logger.Tracef("[WatchProject]: Model Renaming Event %s", event.Name)
 					s.RemoveModelFromIndex(event.Name)
 				}
 			}

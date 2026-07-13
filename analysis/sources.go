@@ -186,7 +186,7 @@ func addSourceFileToTables(tables []*DbtTable, file string) {
 }
 
 func (s *State) ProcessNewConfigYaml(file string) {
-	s.Logger.Debugf("Processing config file (adding step): %s", file)
+	s.Logger.Tracef("Processing config file (adding step): %s", file)
 
 	data, err := os.ReadFile(file)
 	if err != nil {
@@ -201,7 +201,7 @@ func (s *State) ProcessNewConfigYaml(file string) {
 	s.configFileHashesMu.Lock()
 	if s.configFileHashes[file] == hash {
 		s.configFileHashesMu.Unlock()
-		s.Logger.Debugf("Config file %s unchanged (hash match). Skipping reparse.", file)
+		s.Logger.Tracef("Config file %s unchanged (hash match). Skipping reparse.", file)
 		return
 	}
 	s.configFileHashes[file] = hash
@@ -210,7 +210,7 @@ func (s *State) ProcessNewConfigYaml(file string) {
 	basename := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	if basename == "dbt_project" {
 		project := DbtProject{}
-		s.Logger.Debugf("Unmarshaling dbt_project: %s", file)
+		s.Logger.Tracef("Unmarshaling dbt_project: %s", file)
 		if err := yaml.Unmarshal(data, &project); err != nil {
 			s.Logger.Errorf("Error unmarshaling dbt_project %s: %s", file, err)
 			return
@@ -218,7 +218,7 @@ func (s *State) ProcessNewConfigYaml(file string) {
 		s.SetDbtProject(project, file)
 	} else {
 		sources := DbtSources{}
-		s.Logger.Debugf("Unmarshaling yml config file: %s", file)
+		s.Logger.Tracef("Unmarshaling yml config file: %s", file)
 		if err := yaml.Unmarshal(data, &sources); err != nil {
 			s.Logger.Errorf("Error unmarshaling yml config file %s: %s", file, err)
 			return
@@ -228,5 +228,5 @@ func (s *State) ProcessNewConfigYaml(file string) {
 }
 
 func (s *State) RemoveConfigYaml(file string) {
-	s.Logger.Debugf("Processing config file (removing step): %s", file)
+	s.Logger.Tracef("Processing config file (removing step): %s", file)
 }
