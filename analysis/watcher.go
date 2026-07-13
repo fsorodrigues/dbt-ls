@@ -5,7 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/charmbracelet/log"
+	"dbt_ls/logger"
+
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -22,14 +23,14 @@ func (w *DbtWatcher) Close() {
 	_ = w.Watcher.Close()
 }
 
-func (w *DbtWatcher) HandleAsyncClose(logger *log.Logger) {
+func (w *DbtWatcher) HandleAsyncClose(logger *logger.Logger) {
 	if w != nil {
 		logger.Debug("Closing ProjectWatcher in HandleAsyncClose")
 		w.Close()
 	}
 }
 
-func NewWatcher(t, root string, logger *log.Logger) (*DbtWatcher, error) {
+func NewWatcher(t, root string, logger *logger.Logger) (*DbtWatcher, error) {
 	watcher := &DbtWatcher{
 		Root: root,
 		Type: t,

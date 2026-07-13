@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"os"
 
 	"dbt_ls/analysis"
 	"dbt_ls/lsp"
@@ -87,9 +86,10 @@ func handleExit(s *Server, state *analysis.State, _ lsp.ClientMessage, contents 
 	state.ProjectWatcher.Close()
 
 	if state.ShutdownRequested {
-		os.Exit(0)
+		s.requestExit(0)
+		return
 	}
-	os.Exit(1)
+	s.requestExit(1)
 }
 
 func handleDidOpen(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {

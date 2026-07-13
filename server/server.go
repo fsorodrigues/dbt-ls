@@ -5,15 +5,15 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/charmbracelet/log"
-
 	"dbt_ls/analysis"
+	"dbt_ls/logger"
 	"dbt_ls/lsp"
 )
 
 type Server struct {
-	Logger *log.Logger
-	Cancel context.CancelFunc
+	Logger   *logger.Logger
+	Cancel   context.CancelFunc
+	ExitCode *int
 }
 
 func (s *Server) checkRoot(state *analysis.State, msgIn lsp.InitializeRequest) error {
@@ -67,6 +67,13 @@ func (s *Server) parseRootURI(state *analysis.State, msgIn lsp.InitializeRequest
 
 func (s *Server) startShutdown(state *analysis.State) {
 	state.Shutdown()
+	if s.Cancel != nil {
+		s.Cancel()
+	}
+}
+
+func (s *Server) requestExit(code int) {
+	s.ExitCode = &code
 	if s.Cancel != nil {
 		s.Cancel()
 	}

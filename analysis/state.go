@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"sync"
 
+	"dbt_ls/logger"
 	"dbt_ls/lsp"
 
-	"github.com/charmbracelet/log"
 	trie "github.com/zyedidia/generic/trie"
 )
 
@@ -48,7 +48,7 @@ type State struct {
 	DbtConfigExtensions []string
 	ModelRoot           string
 	ConfigRoot          string
-	Logger              *log.Logger
+	Logger              *logger.Logger
 	Writer              io.Writer
 	ProjectWatcher      *DbtWatcher
 	watchedDirs         map[string]struct{}
@@ -72,7 +72,7 @@ type sourceFileError struct {
 }
 
 func NewState(
-	logger *log.Logger,
+	logger *logger.Logger,
 	writer io.Writer,
 	projectWatcher *DbtWatcher,
 ) *State {

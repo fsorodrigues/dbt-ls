@@ -2,63 +2,92 @@ package logger
 
 import (
 	"fmt"
-	"io"
-	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/charmbracelet/log"
+	"github.com/charmbracelet/lipgloss"
+	charm "github.com/charmbracelet/log"
 )
 
-func getLoggerFilePath(flag string) (string, error) {
-	if flag != "" {
-		return flag, nil
-	}
+const TraceLevel charm.Level = -8
 
-	if logPath := os.Getenv("DBT_LS_LOG"); logPath != "" {
-		return logPath, nil
-	}
-
-	return "", fmt.Errorf("Can't find a log file path. Should default to file")
+type Logger struct {
+	*charm.Logger
+	filePath string
+	close    func() error
 }
 
-func getLoggerWriter(flag string) (io.Writer, error) {
-	filename, err := getLoggerFilePath(flag)
-	if err != nil {
-		home, _ := os.UserHomeDir()
-		filename = home + "/.local/state/nvim/dbt-lsp.log"
-	}
-
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o666)
-	if err != nil {
-		return nil, fmt.Errorf("Error creating the logger: %s", err)
-	}
-
-	return file, nil
-}
-
-func GetLogger(file, logLevel string) (*log.Logger, error) {
-	w, err := getLoggerWriter(file)
+func GetLogger(logDir, logLevel string) (*Logger, error) {
+	file, path, err := openSessionLogFile(logDir)
 	if err != nil {
 		return nil, err
 	}
 
-	var level log.Level
-	switch logLevel {
-	case "debug":
-		level = log.DebugLevel
-	case "info":
-		level = log.InfoLevel
-	default:
-		level = log.InfoLevel
-	}
-
-	logger := log.NewWithOptions(w, log.Options{
+	base := charm.NewWithOptions(file, charm.Options{
 		ReportCaller:    true,
 		ReportTimestamp: true,
 		TimeFormat:      time.Kitchen,
-		Level:           level,
+		Level:           parseLevel(logLevel),
 		Prefix:          "[dbt_ls]",
+		CallerOffset:    1,
 	})
 
+	styles := charm.DefaultStyles()
+	styles.Levels[TraceLevel] = lipgloss.NewStyle().
+		SetString("TRCE").
+		Bold(true).
+		MaxWidth(4).
+		Foreground(lipgloss.Color("240"))
+	base.SetStyles(styles)
+
+	logger := &Logger{
+		Logger:   base,
+		filePath: path,
+		close:    file.Close,
+	}
+
+	cleanupOldLogsAsync(filepath.Dir(path), path)
 	return logger, nil
+}
+
+func parseLevel(raw string) charm.Level {
+	switch strings.ToLower(raw) {
+	case "trace":
+		return TraceLevel
+	case "debug":
+		return charm.DebugLevel
+	case "info", "":
+		return charm.InfoLevel
+	case "warn", "warning":
+		return charm.WarnLevel
+	case "error":
+		return charm.ErrorLevel
+	case "fatal":
+		return charm.FatalLevel
+	default:
+		return charm.InfoLevel
+	}
+}
+
+func (l *Logger) Trace(msg interface{}, keyvals ...interface{}) {
+	l.Log(TraceLevel, msg, keyvals...)
+}
+
+func (l *Logger) Tracef(format string, args ...interface{}) {
+	l.Log(TraceLevel, fmt.Sprintf(format, args...))
+}
+
+func (l *Logger) Close() error {
+	if l == nil || l.close == nil {
+		return nil
+	}
+	return l.close()
+}
+
+func (l *Logger) Path() string {
+	if l == nil {
+		return ""
+	}
+	return l.filePath
 }

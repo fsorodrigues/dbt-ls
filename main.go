@@ -4,30 +4,37 @@ import (
 	"bufio"
 	"context"
 	"flag"
+	"fmt"
 	"os"
 
 	"dbt_ls/analysis"
 	"dbt_ls/logger"
 	"dbt_ls/rpc"
 	"dbt_ls/server"
-
-	"github.com/charmbracelet/log"
 )
 
 func main() {
-	var logFileFlag string
+	os.Exit(run())
+}
+
+func run() int {
+	var logDirFlag string
 	var logLevel string
 	srv := server.Server{}
-	flag.StringVar(&logFileFlag, "log-file", "", "Path to log file")
+	flag.StringVar(&logDirFlag, "log-dir", "", "Path to log directory")
 	flag.StringVar(&logLevel, "log-level", "", "Set log level")
 	flag.Parse()
 
-	logger, err := logger.GetLogger(logFileFlag, logLevel)
+	logger, err := logger.GetLogger(logDirFlag, logLevel)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Fprintf(os.Stderr, "Error creating logger: %s\n", err)
+		return 1
 	}
+	defer logger.Close()
+
 	srv.Logger = logger
 	srv.Logger.Info("dbt LSP started")
+	srv.Logger.Infof("Log file: %s", logger.Path())
 
 	writer := os.Stdout
 	srv.Logger.Debug("Writer started")
@@ -38,7 +45,8 @@ func main() {
 
 	projectWatcher, err := analysis.NewWatcher("project", "./models", logger)
 	if err != nil {
-		srv.Logger.Fatalf("Error starting the projectWatcher. %s", err)
+		srv.Logger.Errorf("Error starting the projectWatcher. %s", err)
+		return 1
 	}
 	// ensures the watcher is closed, even if it has to be reinitialized by the
 	// WatchProject function error handling
@@ -66,10 +74,19 @@ func main() {
 		if ok := srv.Dispatch(state, method, contents); !ok {
 			srv.Logger.Debugf("Ignoring unsupported method: %s", method)
 		}
+		if srv.ExitCode != nil {
+			break
+		}
 	}
 	logger.Debug("Stopped Stdin scan")
 
 	if err := scanner.Err(); err != nil {
-		srv.Logger.Fatalf("Error scanning stdin: %s", err)
+		srv.Logger.Errorf("Error scanning stdin: %s", err)
+		return 1
 	}
+
+	if srv.ExitCode != nil {
+		return *srv.ExitCode
+	}
+	return 0
 }

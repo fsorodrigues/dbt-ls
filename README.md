@@ -100,10 +100,10 @@ native `vim.lsp.config` and `vim.lsp.enable` APIs).
 vim.lsp.config('dbt_ls', {
   cmd = {
     "/path/to/your/dbt_ls_binary", -- i.e. /usr/local/bin/dbt_ls
-    "--log-file",
-    "/path/to/your/dbt_ls_log_file.txt", -- i.e. /var/log/dbt-ls/log.txt
+    "--log-dir",
+    "/path/to/your/dbt_ls_logs", -- optional; defaults to ${XDG_STATE_HOME:-~/.local/state}/dbt-ls/logs/
     "--log-level",
-    "debug", -- "info" for less verbose (but please use debug to help catch bugs and improve this)
+    "debug", -- use "trace" for the most verbose logs
   },
   filetypes = { "sql" },
   root_markers = { "dbt_project.yml", "dbt_project.yaml", ".git" },
