@@ -12,7 +12,6 @@ import (
 
 type DbtWatcher struct {
 	Watcher *fsnotify.Watcher
-	Root    string
 	Type    string
 }
 
@@ -30,9 +29,8 @@ func (w *DbtWatcher) HandleAsyncClose(logger *logger.Logger) {
 	}
 }
 
-func NewWatcher(t, root string, logger *logger.Logger) (*DbtWatcher, error) {
+func NewWatcher(t string, logger *logger.Logger) (*DbtWatcher, error) {
 	watcher := &DbtWatcher{
-		Root: root,
 		Type: t,
 	}
 

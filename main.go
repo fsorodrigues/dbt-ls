@@ -43,7 +43,7 @@ func run() int {
 	srv.Cancel = cancel
 	defer cancel()
 
-	projectWatcher, err := analysis.NewWatcher("project", "./models", logger)
+	projectWatcher, err := analysis.NewWatcher("project", logger)
 	if err != nil {
 		srv.Logger.Errorf("Error starting the projectWatcher. %s", err)
 		return 1
