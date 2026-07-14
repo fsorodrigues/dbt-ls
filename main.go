@@ -40,6 +40,7 @@ func run() int {
 	srv.Logger.Debug("Writer started")
 
 	ctx, cancel := context.WithCancel(context.Background())
+	srv.Ctx = ctx
 	srv.Cancel = cancel
 	defer cancel()
 
@@ -58,9 +59,6 @@ func run() int {
 
 	state := analysis.NewState(logger, writer, projectWatcher)
 	srv.Logger.Debug("Server State initialized")
-
-	go state.WatchProject(ctx)
-	go state.DrainNotifications(ctx)
 
 	logger.Debug("Scanning Stdin for incoming messages")
 	for scanner.Scan() {

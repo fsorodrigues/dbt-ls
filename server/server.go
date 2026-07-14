@@ -11,9 +11,20 @@ import (
 )
 
 type Server struct {
-	Logger   *logger.Logger
-	Cancel   context.CancelFunc
-	ExitCode *int
+	Logger            *logger.Logger
+	Ctx               context.Context
+	Cancel            context.CancelFunc
+	ExitCode          *int
+	backgroundStarted bool
+}
+
+func (s *Server) startBackground(state *analysis.State) {
+	if s.backgroundStarted || s.Ctx == nil {
+		return
+	}
+	s.backgroundStarted = true
+	go state.WatchProject(s.Ctx)
+	go state.DrainNotifications(s.Ctx)
 }
 
 func (s *Server) checkRoot(state *analysis.State, msgIn lsp.InitializeRequest) error {

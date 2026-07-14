@@ -35,6 +35,7 @@ func handleInitialize(s *Server, state *analysis.State, raw lsp.ClientMessage, _
 		}
 
 		if state.ServerActive {
+			s.startBackground(state)
 			if err := state.ScanRootPath(rootPath); err != nil {
 				s.Logger.Errorf("Error scanning workspace root %s: %s", rootPath, err)
 			}
