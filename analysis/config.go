@@ -30,6 +30,7 @@ type DbtSources struct {
 }
 
 type DbtProject struct {
-	Name string `yaml:"name"`
+	Name       string   `yaml:"name"`
+	ModelPaths []string `yaml:"model-paths"`
 	DbtSources
 }

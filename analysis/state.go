@@ -1,10 +1,8 @@
 package analysis
 
 import (
-	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"runtime"
 	"sync"
 
@@ -46,7 +44,7 @@ type State struct {
 	DbtModels           *trie.Trie[string]
 	DbtModelExtension   string
 	DbtConfigExtensions []string
-	ModelRoot           string
+	ModelRoots          []string
 	ConfigRoot          string
 	Logger              *logger.Logger
 	Writer              io.Writer
@@ -91,26 +89,13 @@ func NewState(
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
 		DbtConfigExtensions: []string{".yml", ".yaml"},
-		ModelRoot:           "models",
+		ModelRoots:          []string{"models"},
 		ConfigRoot:          ".",
 		Logger:              logger,
 		Writer:              writer,
 		ProjectWatcher:      projectWatcher,
 		watchedDirs:         map[string]struct{}{},
 	}
-}
-
-func (s *State) IsDbtProject(rootPath string) bool {
-	for _, ext := range s.DbtConfigExtensions {
-		file := fmt.Sprintf("%s/dbt_project%s", rootPath, ext)
-		s.Logger.Tracef("Testing for %s", file)
-		if _, err := os.Stat(file); err == nil {
-			s.Logger.Debugf("Root marker identified. %s found", file)
-			return true
-		}
-	}
-
-	return false
 }
 
 func (s *State) Shutdown() {
