@@ -107,8 +107,14 @@ func (s *State) ScanProjectFiles(root string) error {
 }
 
 func (s *State) ScanRootPath(rootPath string) error {
-	modelDir := filepath.Join(rootPath, s.ModelRoot)
-	if err := s.ScanAndWatchDirs([]string{modelDir}, s.FindModelFilesRecursive); err != nil {
+	modelDirs := make([]string, 0, len(s.ModelRoots))
+	for _, modelRoot := range s.ModelRoots {
+		modelDirs = append(modelDirs, filepath.Join(rootPath, modelRoot))
+	}
+	if len(modelDirs) == 0 {
+		s.Logger.Info("No model paths configured; skipping model scan")
+	}
+	if err := s.ScanAndWatchDirs(modelDirs, s.FindModelFilesRecursive); err != nil {
 		return err
 	}
 

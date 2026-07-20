@@ -29,9 +29,13 @@ func handleInitialize(s *Server, state *analysis.State, raw lsp.ClientMessage, _
 	state.ServerActive = false
 	if len(state.RootPaths) > 0 {
 		rootPath := state.RootPaths[0]
-		if ok := state.IsDbtProject(rootPath); ok {
-			s.Logger.Infof("Root status: %t", ok)
+		project, err := state.ParseDbtConfig(rootPath)
+		if err != nil {
+			s.Logger.Errorf("Unable to initialize dbt project: %s", err)
+		} else {
+			state.ModelRoots = project.ModelPaths
 			state.ServerActive = true
+			s.Logger.Info("Root status: true")
 		}
 
 		if state.ServerActive {
