@@ -23,8 +23,9 @@ project).
 ### Model name completion
 
 Autocompletes dbt model names inside `ref('...')` macros. The LS scans your
-dbt project for models (currently defaulting to `.sql` extension files) and
-maintains an index. When you are typing inside a `ref` call (e.g.,
+dbt project for `.sql` model files using the `model-paths` configured in
+`dbt_project.yml` and maintains an index. When omitted, `model-paths` defaults
+to `models`, matching dbt. When you are typing inside a `ref` call (e.g.,
 `ref('my_mod`)`), it suggests available models matching the input.
 
 ![Model name complete suggestion when on ref tag](./docs/images/ref.gif)
