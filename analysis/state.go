@@ -37,7 +37,7 @@ type State struct {
 	configFileHashes    map[string]string // file path → sha256 of last-processed content
 	configFileHashesMu  sync.Mutex
 	DbtSourcesByFile    map[string]DbtSources
-	SourceTableIndex    map[sourceTableKey]map[string]sourceDecl
+	SourceTableIndex    map[sourceTableKey]map[string][]sourceDecl
 	Root                []lsp.WorkspaceFolder // LSP-provided workspace folders (Name/URI)
 	RootPaths           []string              // parsed filesystem paths, index-aligned with Root
 	ServerActive        bool
@@ -115,7 +115,7 @@ func NewState(
 		NotifCh:             make(chan lsp.ShowMessageParams, 16),
 		configFileHashes:    map[string]string{},
 		DbtSourcesByFile:    map[string]DbtSources{},
-		SourceTableIndex:    map[sourceTableKey]map[string]sourceDecl{},
+		SourceTableIndex:    map[sourceTableKey]map[string][]sourceDecl{},
 		ServerActive:        false,
 		ShutdownRequested:   false,
 		DbtModels:           models,

@@ -30,7 +30,7 @@ func (s *State) resetProjectState() {
 	s.SourcesValid = true
 	s.SourceFileErrors = map[string][]sourceFileError{}
 	s.DbtSourcesByFile = map[string]DbtSources{}
-	s.SourceTableIndex = map[sourceTableKey]map[string]sourceDecl{}
+	s.SourceTableIndex = map[sourceTableKey]map[string][]sourceDecl{}
 	s.DbtConfigMu.Unlock()
 	s.ModelRoots = []string{"models"}
 
@@ -88,14 +88,14 @@ func (s *State) addSourceDeclsForFileLocked(file string, sources DbtSources) {
 		for _, tab := range src.Tables {
 			key := sourceTableKey{Source: src.Name, Table: tab.Name}
 			if s.SourceTableIndex[key] == nil {
-				s.SourceTableIndex[key] = map[string]sourceDecl{}
+				s.SourceTableIndex[key] = map[string][]sourceDecl{}
 			}
 
-			s.SourceTableIndex[key][file] = sourceDecl{
+			s.SourceTableIndex[key][file] = append(s.SourceTableIndex[key][file], sourceDecl{
 				Source: src,
 				Table:  tab,
 				File:   file,
-			}
+			})
 		}
 	}
 }
@@ -114,16 +114,23 @@ func (s *State) recomputeAffectedSourceTablesLocked(keys map[sourceTableKey]stru
 	for key := range keys {
 		s.removeDbtConfigTableLocked(key)
 
-		decls := s.SourceTableIndex[key]
-		switch len(decls) {
+		declsByFile := s.SourceTableIndex[key]
+		declarationCount := 0
+		var onlyDecl sourceDecl
+		for _, decls := range declsByFile {
+			declarationCount += len(decls)
+			if len(decls) == 1 && declarationCount == 1 {
+				onlyDecl = decls[0]
+			}
+		}
+
+		switch declarationCount {
 		case 0:
 			continue
 		case 1:
-			for _, decl := range decls {
-				s.upsertDbtConfigTableLocked(decl)
-			}
+			s.upsertDbtConfigTableLocked(onlyDecl)
 		default:
-			s.registerSourceConflictLocked(key, decls)
+			s.registerSourceConflictLocked(key, declsByFile)
 		}
 	}
 }
@@ -181,7 +188,7 @@ func (s *State) upsertDbtConfigTableLocked(decl sourceDecl) {
 	src.Tables[decl.Table.Name] = decl.Table
 }
 
-func (s *State) registerSourceConflictLocked(key sourceTableKey, decls map[string]sourceDecl) {
+func (s *State) registerSourceConflictLocked(key sourceTableKey, decls map[string][]sourceDecl) {
 	files := make([]string, 0, len(decls))
 	for file := range decls {
 		files = append(files, file)

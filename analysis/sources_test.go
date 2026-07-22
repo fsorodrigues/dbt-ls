@@ -62,6 +62,53 @@ func TestRemoveConfigYamlResolvesCollision(t *testing.T) {
 	}
 }
 
+func TestDuplicateSourceTableInSameFileIsInvalid(t *testing.T) {
+	s := newTestState()
+	file := filepath.Join(t.TempDir(), "sources.yml")
+	sources := DbtSources{Sources: []*DbtSource{{
+		Name: "warehouse",
+		Tables: []*DbtTable{
+			{Name: "orders"},
+			{Name: "orders"},
+		},
+	}}}
+
+	s.SetDbtSources(sources, file)
+
+	if s.SourcesValid {
+		t.Fatal("expected duplicate source table to be invalid")
+	}
+	if got := len(s.SourceTableIndex[sourceTableKey{Source: "warehouse", Table: "orders"}][file]); got != 2 {
+		t.Fatalf("indexed declarations = %d, want 2", got)
+	}
+	if got := len(s.SourceFileErrors[file]); got != 1 {
+		t.Fatalf("source errors = %d, want 1", got)
+	}
+	want := "Table warehouse.orders already exists. Conflicting files: " + file
+	if got := s.SourceFileErrors[file][0].Message; got != want {
+		t.Fatalf("error message = %q, want %q", got, want)
+	}
+}
+
+func TestUpdatingSameFileResolvesDuplicateSourceTable(t *testing.T) {
+	s := newTestState()
+	file := filepath.Join(t.TempDir(), "sources.yml")
+	duplicate := DbtSources{Sources: []*DbtSource{{
+		Name: "warehouse",
+		Tables: []*DbtTable{
+			{Name: "orders"},
+			{Name: "orders"},
+		},
+	}}}
+
+	s.SetDbtSources(duplicate, file)
+	s.SetDbtSources(testSource("warehouse", "orders"), file)
+
+	if !s.SourcesValid || len(s.SourceFileErrors) != 0 {
+		t.Fatalf("duplicate was not resolved: valid=%t errors=%#v", s.SourcesValid, s.SourceFileErrors)
+	}
+}
+
 func TestRemoveConfigYamlUnknownFileIsNoOp(t *testing.T) {
 	s := newTestState()
 	s.RemoveConfigYaml(filepath.Join(t.TempDir(), "missing.yml"))
