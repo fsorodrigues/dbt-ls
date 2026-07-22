@@ -85,7 +85,7 @@ func TestReconcileProjectDeactivatesAndReactivates(t *testing.T) {
 	s.reconcileProject(root)
 	select {
 	case notif := <-s.NotifCh:
-		t.Fatalf("active project reconciliation sent notification: %q", notif.Params.Message)
+		t.Fatalf("active project reconciliation sent notification: %q", notif.Message)
 	default:
 	}
 
@@ -122,15 +122,15 @@ func TestRepeatedProjectIndexingFailureNotifiesOnce(t *testing.T) {
 
 	select {
 	case notif := <-s.NotifCh:
-		if notif.Params.Message != "dbt-ls: project could not be indexed: lstat "+filepath.Join(root, "missing")+": no such file or directory" {
-			t.Fatalf("unexpected notification: %q", notif.Params.Message)
+		if notif.Message != "dbt-ls: project could not be indexed: lstat "+filepath.Join(root, "missing")+": no such file or directory" {
+			t.Fatalf("unexpected notification: %q", notif.Message)
 		}
 	default:
 		t.Fatal("expected indexing failure notification")
 	}
 	select {
 	case notif := <-s.NotifCh:
-		t.Fatalf("repeated indexing failure sent notification: %q", notif.Params.Message)
+		t.Fatalf("repeated indexing failure sent notification: %q", notif.Message)
 	default:
 	}
 }

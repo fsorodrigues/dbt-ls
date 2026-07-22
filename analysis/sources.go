@@ -44,10 +44,7 @@ func (s *State) resetProjectState() {
 }
 
 func (s *State) NotifyProject(message string) {
-	s.NotifCh <- lsp.ShowMessageNotification{
-		Notification: lsp.Notification{Method: "window/showMessage"},
-		Params:       lsp.ShowMessageParams{Type: lsp.MessageTypeError, Message: message},
-	}
+	s.ShowMessage(lsp.MessageTypeError, message)
 }
 
 func (s *State) SetDbtSources(sources DbtSources, file string) {
