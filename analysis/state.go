@@ -33,7 +33,7 @@ type State struct {
 	DbtRoots            []string
 	SourcesValid        bool
 	SourceFileErrors    map[string][]sourceFileError // keyed by file path; guarded by DbtConfigMu
-	NotifCh             chan lsp.ShowMessageNotification
+	NotifCh             chan lsp.ShowMessageParams
 	configFileHashes    map[string]string // file path → sha256 of last-processed content
 	configFileHashesMu  sync.Mutex
 	DbtSourcesByFile    map[string]DbtSources
@@ -112,7 +112,7 @@ func NewState(
 		Documents:           map[string]*Document{},
 		SourcesValid:        true,
 		SourceFileErrors:    map[string][]sourceFileError{},
-		NotifCh:             make(chan lsp.ShowMessageNotification, 16),
+		NotifCh:             make(chan lsp.ShowMessageParams, 16),
 		configFileHashes:    map[string]string{},
 		DbtSourcesByFile:    map[string]DbtSources{},
 		SourceTableIndex:    map[sourceTableKey]map[string]sourceDecl{},

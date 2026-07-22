@@ -5,6 +5,7 @@ const (
 	MessageTypeWarning = 2
 	MessageTypeInfo    = 3
 	MessageTypeLog     = 4
+	MethodShowMessage  = "window/showMessage"
 )
 
 type ShowMessageParams struct {

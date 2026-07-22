@@ -37,10 +37,12 @@ func (s *State) notifySourceState(errs []string) {
 	for _, e := range errs {
 		msg.WriteString("  • " + e + "\n")
 	}
-	s.NotifCh <- lsp.ShowMessageNotification{
-		Notification: lsp.Notification{Method: "window/showMessage"},
-		Params:       lsp.ShowMessageParams{Type: lsp.MessageTypeWarning, Message: msg.String()},
-	}
+	s.ShowMessage(lsp.MessageTypeWarning, msg.String())
+}
+
+// ShowMessage queues a window/showMessage notification for the client.
+func (s *State) ShowMessage(messageType int, message string) {
+	s.NotifCh <- lsp.ShowMessageParams{Type: messageType, Message: message}
 }
 
 // DrainNotifications reads from NotifCh and writes window/showMessage
@@ -56,15 +58,15 @@ func (s *State) DrainNotifications(ctx context.Context) {
 			if !ok {
 				return
 			}
-			s.sendShowMessage(notif.Params.Type, notif.Params.Message)
+			s.sendShowMessage(notif)
 		}
 	}
 }
 
-func (s *State) sendShowMessage(messageType int, message string) {
+func (s *State) sendShowMessage(params lsp.ShowMessageParams) {
 	notif := lsp.ShowMessageNotification{
-		Notification: lsp.Notification{Method: "window/showMessage"},
-		Params:       lsp.ShowMessageParams{Type: messageType, Message: message},
+		Notification: lsp.Notification{Method: lsp.MethodShowMessage},
+		Params:       params,
 	}
 	msgIn, err := rpc.EncodeMsg(notif)
 	if err != nil {
@@ -72,6 +74,9 @@ func (s *State) sendShowMessage(messageType int, message string) {
 		return
 	}
 
-	s.Writer.Write([]byte(msgIn))
+	if _, err := s.Writer.Write([]byte(msgIn)); err != nil {
+		s.Logger.Errorf("Couldn't write ShowMessageNotification: %s", err)
+		return
+	}
 	s.Logger.Infof("Sent ShowMessageNotification of type %d", notif.Params.Type)
 }
