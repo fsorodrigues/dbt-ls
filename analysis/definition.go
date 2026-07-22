@@ -17,7 +17,7 @@ func (s *State) TextDocumentGoToDefinition(
 			ID:  &id,
 		},
 	}
-	if !s.ServerActive {
+	if !s.IsServerActive() {
 		return response
 	}
 

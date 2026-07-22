@@ -157,7 +157,7 @@ func NewCompletionResponse(id int) *lsp.CompletionResponse {
 
 func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) lsp.CompletionResponse {
 	response := NewCompletionResponse(id)
-	if !s.ServerActive {
+	if !s.IsServerActive() {
 		return *response
 	}
 

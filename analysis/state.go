@@ -27,6 +27,8 @@ func WorkspacePath(uri string) (string, error) {
 type State struct {
 	Documents           map[string]*Document
 	DbtConfigMu         sync.Mutex
+	ProjectMu           sync.RWMutex
+	ProjectLifecycleMu  sync.Mutex
 	DbtConfig           DbtConfig
 	DbtRoots            []string
 	SourcesValid        bool
@@ -39,6 +41,8 @@ type State struct {
 	Root                []lsp.WorkspaceFolder // LSP-provided workspace folders (Name/URI)
 	RootPaths           []string              // parsed filesystem paths, index-aligned with Root
 	ServerActive        bool
+	ProjectRoot         string
+	ProjectConfigPath   string
 	ShutdownRequested   bool
 	DbtModelsMu         sync.Mutex
 	DbtModels           *trie.Trie[string]
@@ -51,6 +55,34 @@ type State struct {
 	ProjectWatcher      *DbtWatcher
 	watchedDirs         map[string]struct{}
 	watchedDirsMu       sync.Mutex
+}
+
+func (s *State) IsServerActive() bool {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ServerActive
+}
+
+func (s *State) SetServerActive(active bool) {
+	s.setServerActive(active)
+}
+
+func (s *State) SetProjectRoot(root string) {
+	s.ProjectMu.Lock()
+	s.ProjectRoot = root
+	s.ProjectMu.Unlock()
+}
+
+func (s *State) ProjectRootPath() string {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ProjectRoot
+}
+
+func (s *State) setServerActive(active bool) {
+	s.ProjectMu.Lock()
+	s.ServerActive = active
+	s.ProjectMu.Unlock()
 }
 
 type sourceTableKey struct {
@@ -99,6 +131,6 @@ func NewState(
 }
 
 func (s *State) Shutdown() {
-	s.ServerActive = false
+	s.setServerActive(false)
 	s.ShutdownRequested = true
 }
