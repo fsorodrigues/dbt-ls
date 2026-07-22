@@ -120,7 +120,14 @@ func (s *State) WatchProject(ctx context.Context) {
 				return
 			}
 
-			if !s.ServerActive {
+			if s.isProjectConfigFile(event.Name) {
+				if event.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename) != 0 {
+					s.reconcileProject(s.ProjectRootPath())
+				}
+				continue
+			}
+
+			if !s.IsServerActive() {
 				continue
 			}
 
@@ -167,7 +174,7 @@ func (s *State) WatchProject(ctx context.Context) {
 				return
 			}
 
-			if !s.ServerActive {
+			if !s.IsServerActive() {
 				continue
 			}
 			s.Logger.Errorf("[WatchProject]: error: %s", err.Error())

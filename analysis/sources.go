@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 
+	"dbt_ls/lsp"
+	trie "github.com/zyedidia/generic/trie"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -20,6 +22,32 @@ func (s *State) SetDbtProject(project DbtProject, file string) {
 	s.DbtConfigMu.Unlock()
 
 	s.notifySourceState(errs)
+}
+
+func (s *State) resetProjectState() {
+	s.DbtConfigMu.Lock()
+	s.DbtConfig = DbtConfig{}
+	s.SourcesValid = true
+	s.SourceFileErrors = map[string][]sourceFileError{}
+	s.DbtSourcesByFile = map[string]DbtSources{}
+	s.SourceTableIndex = map[sourceTableKey]map[string]sourceDecl{}
+	s.DbtConfigMu.Unlock()
+	s.ModelRoots = []string{"models"}
+
+	s.configFileHashesMu.Lock()
+	s.configFileHashes = map[string]string{}
+	s.configFileHashesMu.Unlock()
+
+	s.DbtModelsMu.Lock()
+	s.DbtModels = trie.New[string]()
+	s.DbtModelsMu.Unlock()
+}
+
+func (s *State) NotifyProject(message string) {
+	s.NotifCh <- lsp.ShowMessageNotification{
+		Notification: lsp.Notification{Method: "window/showMessage"},
+		Params:       lsp.ShowMessageParams{Type: lsp.MessageTypeError, Message: message},
+	}
 }
 
 func (s *State) SetDbtSources(sources DbtSources, file string) {
@@ -229,4 +257,36 @@ func (s *State) ProcessNewConfigYaml(file string) {
 
 func (s *State) RemoveConfigYaml(file string) {
 	s.Logger.Tracef("Processing config file (removing step): %s", file)
+
+	s.configFileHashesMu.Lock()
+	delete(s.configFileHashes, file)
+	s.configFileHashesMu.Unlock()
+
+	s.ProjectMu.Lock()
+	root := s.ProjectRoot
+	activeConfig := s.ProjectConfigPath
+	s.ProjectMu.Unlock()
+	if root != "" && filepath.Clean(file) == filepath.Clean(activeConfig) {
+		s.reconcileProject(root)
+		return
+	}
+
+	s.DbtConfigMu.Lock()
+	oldSources := s.DbtSourcesByFile[file]
+	affectedKeys := affectedSourceTableKeys(oldSources, DbtSources{})
+	for _, src := range oldSources.Sources {
+		for key := range s.SourceTableIndex {
+			if key.Source == src.Name {
+				affectedKeys[key] = struct{}{}
+			}
+		}
+	}
+	s.removeSourceDeclsForFileLocked(file)
+	delete(s.DbtSourcesByFile, file)
+	delete(s.SourceFileErrors, file)
+	s.recomputeAffectedSourceTablesLocked(affectedKeys)
+	errs := s.allSourceErrorsLocked()
+	s.SourcesValid = len(errs) == 0
+	s.DbtConfigMu.Unlock()
+	s.notifySourceState(errs)
 }

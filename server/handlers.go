@@ -26,26 +26,23 @@ func handleInitialize(s *Server, state *analysis.State, raw lsp.ClientMessage, _
 		return
 	}
 
-	state.ServerActive = false
+	state.SetServerActive(false)
 	if len(state.RootPaths) > 0 {
 		rootPath := state.RootPaths[0]
 		project, err := state.ParseDbtConfig(rootPath)
 		if err != nil {
 			s.Logger.Errorf("Unable to initialize dbt project: %s", err)
+			state.SetProjectRoot(rootPath)
+			state.NotifyProject("dbt-ls: no dbt project identified; server inactive")
 		} else {
-			state.ModelRoots = project.ModelPaths
-			state.ServerActive = true
+			state.ActivateProject(rootPath, state.GetProjectConfigPath(rootPath), project)
 			s.Logger.Info("Root status: true")
 		}
 
-		if state.ServerActive {
-			s.startBackground(state)
-			if err := state.ScanRootPath(rootPath); err != nil {
-				s.Logger.Errorf("Error scanning workspace root %s: %s", rootPath, err)
-			}
-		}
+		state.AddWatchDir(rootPath)
+		s.startBackground(state)
 	}
-	s.Logger.Debugf("InitializeRequest. ServerActive status: %t", state.ServerActive)
+	s.Logger.Debugf("InitializeRequest. ServerActive status: %t", state.IsServerActive())
 
 	msgOut := lsp.NewInitializeResponse(msgIn.ID)
 	response, err := rpc.EncodeMsg(msgOut)
@@ -66,7 +63,7 @@ func handleShutdown(s *Server, state *analysis.State, raw lsp.ClientMessage, _ [
 	msgIn := raw.(*lsp.ShutdownRequest)
 
 	s.startShutdown(state)
-	s.Logger.Debugf("ShutdownRequest. ServerActive status: %t", state.ServerActive)
+	s.Logger.Debugf("ShutdownRequest. ServerActive status: %t", state.IsServerActive())
 
 	msgOut := lsp.NewShutdownResponse(msgIn.ID)
 	response, err := rpc.EncodeMsg(msgOut)
@@ -96,7 +93,7 @@ func handleExit(s *Server, state *analysis.State, _ lsp.ClientMessage, contents 
 }
 
 func handleDidOpen(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {
-	if !state.ServerActive {
+	if !state.IsServerActive() {
 		return
 	}
 
@@ -110,7 +107,7 @@ func handleDidOpen(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []
 }
 
 func handleDidChange(s *Server, state *analysis.State, raw lsp.ClientMessage, contents []byte) {
-	if !state.ServerActive {
+	if !state.IsServerActive() {
 		return
 	}
 
@@ -131,7 +128,7 @@ func handleDidChange(s *Server, state *analysis.State, raw lsp.ClientMessage, co
 }
 
 func handleWillSave(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {
-	if !state.ServerActive {
+	if !state.IsServerActive() {
 		return
 	}
 

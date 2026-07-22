@@ -25,6 +25,10 @@ func (s *State) addWatchDir(path string) error {
 	return nil
 }
 
+func (s *State) AddWatchDir(path string) error {
+	return s.addWatchDir(path)
+}
+
 func (s *State) resetWatchedDirs() {
 	s.watchedDirsMu.Lock()
 	defer s.watchedDirsMu.Unlock()
