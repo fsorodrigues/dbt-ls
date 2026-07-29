@@ -77,16 +77,24 @@ vim.keymap.set("n", "gd", "<cmd>Telescope lsp_definitions<CR>", { desc = "..." }
 
 ### Compiling from source
 
+The recommended way:
+
 ```bash
-# clone repository & go to directory
+go install github.com/fsorodrigues/dbt-ls@latest
+```
+
+This installs the `dbt-ls` binary into `$(go env GOPATH)/bin` (or `$GOBIN` if
+set). Make sure that directory is on your `PATH`.
+
+You can also build from a local clone:
+
+```bash
 git clone https://github.com/fsorodrigues/dbt-ls
 cd dbt-ls
+go install .
 
-# compile with go & output binary to bin/ directory (relative path)
-go build -o bin/dbt-ls .
-
-# Optionally move to a directory in your PATH
-mv bin/dbt-ls /usr/local/bin/
+# or
+go build -o /path/to/your/dbt-ls .
 ```
 
 ## Editor Configuration
@@ -98,11 +106,11 @@ following to your `init.lua` or a dedicated configuration file. (this uses the
 native `vim.lsp.config` and `vim.lsp.enable` APIs). 
 
 ```lua
-vim.lsp.config('dbt_ls', {
+vim.lsp.config('dbt-ls', {
   cmd = {
-    "/path/to/your/dbt_ls_binary", -- i.e. /usr/local/bin/dbt_ls
+    "/path/to/your/dbt-ls", -- i.e. /usr/local/bin/dbt-ls
     "--log-dir",
-    "/path/to/your/dbt_ls_logs", -- optional; defaults to ${XDG_STATE_HOME:-~/.local/state}/dbt-ls/logs/
+    "/path/to/your/dbt-ls_logs", -- optional; defaults to ${XDG_STATE_HOME:-~/.local/state}/dbt-ls/logs/
     "--log-level",
     "debug", -- use "trace" for the most verbose logs
   },
@@ -112,7 +120,7 @@ vim.lsp.config('dbt_ls', {
 
 vim.lsp.enable({
     -- other ls ...
-    'dbt_ls',
+    'dbt-ls',
     -- ... other ls
 })
 ```
