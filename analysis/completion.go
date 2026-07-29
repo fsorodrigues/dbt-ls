@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"dbt_ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/lsp"
 )
 
 type SourceCompletionContext struct {

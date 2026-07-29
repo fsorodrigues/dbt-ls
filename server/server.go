@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"dbt_ls/analysis"
-	"dbt_ls/logger"
-	"dbt_ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/analysis"
+	"github.com/fsorodrigues/dbt-ls/logger"
+	"github.com/fsorodrigues/dbt-ls/lsp"
 )
 
 type Server struct {

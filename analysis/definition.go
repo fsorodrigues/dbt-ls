@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"dbt_ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/lsp"
 )
 
 func (s *State) TextDocumentGoToDefinition(

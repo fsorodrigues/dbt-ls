@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"os"
 
-	"dbt_ls/analysis"
-	"dbt_ls/logger"
-	"dbt_ls/rpc"
-	"dbt_ls/server"
+	"github.com/fsorodrigues/dbt-ls/analysis"
+	"github.com/fsorodrigues/dbt-ls/logger"
+	"github.com/fsorodrigues/dbt-ls/rpc"
+	"github.com/fsorodrigues/dbt-ls/server"
 )
 
 func main() {

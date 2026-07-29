@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"dbt_ls/logger"
+	"github.com/fsorodrigues/dbt-ls/logger"
 
 	charm "github.com/charmbracelet/log"
 )

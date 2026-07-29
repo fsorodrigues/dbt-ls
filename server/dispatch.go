@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"dbt_ls/analysis"
-	"dbt_ls/lsp"
-	"dbt_ls/rpc"
+	"github.com/fsorodrigues/dbt-ls/analysis"
+	"github.com/fsorodrigues/dbt-ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/rpc"
 )
 
 type methodHandler struct {

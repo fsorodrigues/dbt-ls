@@ -3,7 +3,7 @@ package analysis
 import (
 	"encoding/json"
 
-	"dbt_ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/lsp"
 
 	rope "github.com/zyedidia/generic/rope"
 )

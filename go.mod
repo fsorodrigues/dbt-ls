@@ -1,4 +1,4 @@
-module dbt_ls
+module github.com/fsorodrigues/dbt-ls
 
 go 1.25.1
 

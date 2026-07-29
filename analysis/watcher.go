@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"dbt_ls/logger"
+	"github.com/fsorodrigues/dbt-ls/logger"
 
 	"github.com/fsnotify/fsnotify"
 )

@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"dbt_ls/lsp"
-	"dbt_ls/rpc"
+	"github.com/fsorodrigues/dbt-ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/rpc"
 )
 
 // allSourceErrorsLocked flattens SourceFileErrors into a single slice.

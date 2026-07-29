@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"sync"
 
-	"dbt_ls/logger"
-	"dbt_ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/logger"
+	"github.com/fsorodrigues/dbt-ls/lsp"
 
 	trie "github.com/zyedidia/generic/trie"
 )

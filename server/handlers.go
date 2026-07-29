@@ -3,9 +3,9 @@ package server
 import (
 	"fmt"
 
-	"dbt_ls/analysis"
-	"dbt_ls/lsp"
-	"dbt_ls/rpc"
+	"github.com/fsorodrigues/dbt-ls/analysis"
+	"github.com/fsorodrigues/dbt-ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/rpc"
 )
 
 func handleInitialize(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {

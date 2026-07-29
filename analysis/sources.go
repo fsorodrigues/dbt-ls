@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"dbt_ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/lsp"
 	trie "github.com/zyedidia/generic/trie"
 	"go.yaml.in/yaml/v4"
 )
