@@ -30,7 +30,11 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "Error creating logger: %s\n", err)
 		return 1
 	}
-	defer logger.Close()
+	defer func() {
+		if err := logger.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error closing logger: %s\n", err)
+		}
+	}()
 
 	srv.Logger = logger
 	srv.Logger.Info("dbt LSP started")
