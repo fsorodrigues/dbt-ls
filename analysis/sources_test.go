@@ -37,8 +37,12 @@ func TestRemoveConfigYamlRemovesSourcesAndHash(t *testing.T) {
 	if _, ok := s.configFileHashes[file]; ok {
 		t.Fatal("hash for removed file remains")
 	}
-	if len(s.DbtConfig.Sources) != 0 || !s.SourcesValid {
-		t.Fatalf("computed source state not cleared: %#v, valid=%t", s.DbtConfig.Sources, s.SourcesValid)
+	if len(s.DbtConfig.Sources) != 0 || !s.ServerCapabilitiesStatus.SourcesEnabled {
+		t.Fatalf(
+			"computed source state not cleared: %#v, valid=%t",
+			s.DbtConfig.Sources,
+			s.ServerCapabilitiesStatus.SourcesEnabled,
+		)
 	}
 }
 
@@ -48,14 +52,18 @@ func TestRemoveConfigYamlResolvesCollision(t *testing.T) {
 	b := filepath.Join(t.TempDir(), "b.yml")
 	s.SetDbtSources(testSource("warehouse", "orders"), a)
 	s.SetDbtSources(testSource("warehouse", "orders"), b)
-	if s.SourcesValid {
+	if s.ServerCapabilitiesStatus.SourcesEnabled {
 		t.Fatal("expected duplicate source table to be invalid")
 	}
 
 	s.RemoveConfigYaml(b)
 
-	if !s.SourcesValid || len(s.SourceFileErrors) != 0 {
-		t.Fatalf("collision was not resolved: valid=%t errors=%#v", s.SourcesValid, s.SourceFileErrors)
+	if !s.ServerCapabilitiesStatus.SourcesEnabled || len(s.SourceFileErrors) != 0 {
+		t.Fatalf(
+			"collision was not resolved: valid=%t errors=%#v",
+			s.ServerCapabilitiesStatus.SourcesEnabled,
+			s.SourceFileErrors,
+		)
 	}
 	if got := s.DbtConfig.Sources["warehouse"].Tables["orders"].SourceFile; got != a {
 		t.Fatalf("remaining table source file = %q, want %q", got, a)
@@ -75,10 +83,12 @@ func TestDuplicateSourceTableInSameFileIsInvalid(t *testing.T) {
 
 	s.SetDbtSources(sources, file)
 
-	if s.SourcesValid {
+	if s.ServerCapabilitiesStatus.SourcesEnabled {
 		t.Fatal("expected duplicate source table to be invalid")
 	}
-	if got := len(s.SourceTableIndex[sourceTableKey{Source: "warehouse", Table: "orders"}][file]); got != 2 {
+	if got := len(
+		s.SourceTableIndex[sourceTableKey{Source: "warehouse", Table: "orders"}][file],
+	); got != 2 {
 		t.Fatalf("indexed declarations = %d, want 2", got)
 	}
 	if got := len(s.SourceFileErrors[file]); got != 1 {
@@ -104,15 +114,19 @@ func TestUpdatingSameFileResolvesDuplicateSourceTable(t *testing.T) {
 	s.SetDbtSources(duplicate, file)
 	s.SetDbtSources(testSource("warehouse", "orders"), file)
 
-	if !s.SourcesValid || len(s.SourceFileErrors) != 0 {
-		t.Fatalf("duplicate was not resolved: valid=%t errors=%#v", s.SourcesValid, s.SourceFileErrors)
+	if !s.ServerCapabilitiesStatus.SourcesEnabled || len(s.SourceFileErrors) != 0 {
+		t.Fatalf(
+			"duplicate was not resolved: valid=%t errors=%#v",
+			s.ServerCapabilitiesStatus.SourcesEnabled,
+			s.SourceFileErrors,
+		)
 	}
 }
 
 func TestRemoveConfigYamlUnknownFileIsNoOp(t *testing.T) {
 	s := newTestState()
 	s.RemoveConfigYaml(filepath.Join(t.TempDir(), "missing.yml"))
-	if !s.SourcesValid || len(s.DbtConfig.Sources) != 0 {
+	if !s.ServerCapabilitiesStatus.SourcesEnabled || len(s.DbtConfig.Sources) != 0 {
 		t.Fatal("unknown file changed source state")
 	}
 }
@@ -159,7 +173,11 @@ func TestReconcileProjectDeactivatesAndReactivates(t *testing.T) {
 
 func TestRepeatedProjectIndexingFailureNotifiesOnce(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "dbt_project.yml"), "name: example\nmodel-paths: [missing]\n")
+	writeTestFile(
+		t,
+		filepath.Join(root, "dbt_project.yml"),
+		"name: example\nmodel-paths: [missing]\n",
+	)
 	s := newTestState()
 	s.SetProjectRoot(root)
 	s.SetServerActive(true)
@@ -169,7 +187,10 @@ func TestRepeatedProjectIndexingFailureNotifiesOnce(t *testing.T) {
 
 	select {
 	case notif := <-s.NotifCh:
-		if notif.Message != "dbt-ls: project could not be indexed: lstat "+filepath.Join(root, "missing")+": no such file or directory" {
+		if notif.Message != "dbt-ls: project could not be indexed: lstat "+filepath.Join(
+			root,
+			"missing",
+		)+": no such file or directory" {
 			t.Fatalf("unexpected notification: %q", notif.Message)
 		}
 	default:

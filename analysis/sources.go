@@ -18,16 +18,16 @@ func (s *State) SetDbtProject(project DbtProject, file string) {
 	s.DbtConfig.Name = project.Name
 	s.updateDbtSourcesForFileLocked(project.DbtSources, file)
 	errs := s.allSourceErrorsLocked()
-	s.SourcesValid = len(errs) == 0
 	s.DbtConfigMu.Unlock()
+	s.setSourcesEnabled(len(errs) == 0)
 
 	s.notifySourceState(errs)
 }
 
 func (s *State) resetProjectState() {
+	s.disableProjectCapabilities()
 	s.DbtConfigMu.Lock()
 	s.DbtConfig = DbtConfig{}
-	s.SourcesValid = true
 	s.SourceFileErrors = map[string][]sourceFileError{}
 	s.DbtSourcesByFile = map[string]DbtSources{}
 	s.SourceTableIndex = map[sourceTableKey]map[string][]sourceDecl{}
@@ -51,8 +51,8 @@ func (s *State) SetDbtSources(sources DbtSources, file string) {
 	s.DbtConfigMu.Lock()
 	s.updateDbtSourcesForFileLocked(sources, file)
 	errs := s.allSourceErrorsLocked()
-	s.SourcesValid = len(errs) == 0
 	s.DbtConfigMu.Unlock()
+	s.setSourcesEnabled(len(errs) == 0)
 
 	s.notifySourceState(errs)
 }
@@ -290,7 +290,7 @@ func (s *State) RemoveConfigYaml(file string) {
 	delete(s.SourceFileErrors, file)
 	s.recomputeAffectedSourceTablesLocked(affectedKeys)
 	errs := s.allSourceErrorsLocked()
-	s.SourcesValid = len(errs) == 0
 	s.DbtConfigMu.Unlock()
+	s.setSourcesEnabled(len(errs) == 0)
 	s.notifySourceState(errs)
 }

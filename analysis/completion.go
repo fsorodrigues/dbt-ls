@@ -14,7 +14,11 @@ type SourceCompletionContext struct {
 	TablePrefix string
 }
 
-func (s *State) createRefResponse(lineContent string, params lsp.CompletionParams, response *lsp.CompletionResponse) {
+func (s *State) createRefResponse(
+	lineContent string,
+	params lsp.CompletionParams,
+	response *lsp.CompletionResponse,
+) {
 	modelRef, check := extractModelRefUnderCursor(lineContent, params.Position)
 	s.Logger.Tracef("Check: %t. Search: %s. Models: %+v", check, modelRef, s.DbtModels)
 
@@ -43,13 +47,20 @@ func (s *State) createRefResponse(lineContent string, params lsp.CompletionParam
 				},
 			})
 		}
-		s.Logger.Tracef("TextDocumentCodeCompletion (Ref) ready. Contains %d items", len(response.Result.Items))
+		s.Logger.Tracef(
+			"TextDocumentCodeCompletion (Ref) ready. Contains %d items",
+			len(response.Result.Items),
+		)
 	} else {
 		s.Logger.Tracef("Cannot parse line contents for Ref completion: %s", lineContent)
 	}
 }
 
-func (s *State) createSourceResponse(lineContent string, params lsp.CompletionParams, response *lsp.CompletionResponse) {
+func (s *State) createSourceResponse(
+	lineContent string,
+	params lsp.CompletionParams,
+	response *lsp.CompletionResponse,
+) {
 	ctx, check := extractSourceContextUnderCursor(lineContent, params.Position)
 	s.Logger.Tracef("Source context: %+v, check: %t", ctx, check)
 	if !check {
@@ -59,11 +70,6 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 
 	s.DbtConfigMu.Lock()
 	defer s.DbtConfigMu.Unlock()
-
-	if !s.SourcesValid {
-		s.Logger.Debugf("Source config is invalid; skipping source completion")
-		return
-	}
 
 	switch ctx.Kind {
 	case "source_name":
@@ -111,7 +117,10 @@ func (s *State) createSourceResponse(lineContent string, params lsp.CompletionPa
 		}
 	}
 
-	s.Logger.Tracef("TextDocumentCodeCompletion (Source) ready. Contains %d items", len(response.Result.Items))
+	s.Logger.Tracef(
+		"TextDocumentCodeCompletion (Source) ready. Contains %d items",
+		len(response.Result.Items),
+	)
 }
 
 func sourceNamesWithPrefix(cfg DbtConfig, prefix string) []string {
@@ -155,7 +164,10 @@ func NewCompletionResponse(id int) *lsp.CompletionResponse {
 	}
 }
 
-func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) lsp.CompletionResponse {
+func (s *State) TextDocumentCodeCompletion(
+	id int,
+	params lsp.CompletionParams,
+) lsp.CompletionResponse {
 	response := NewCompletionResponse(id)
 	if !s.IsServerActive() {
 		return *response
@@ -173,8 +185,15 @@ func (s *State) TextDocumentCodeCompletion(id int, params lsp.CompletionParams) 
 		s.Logger.Tracef("Completion Type: %s", completionType)
 		switch completionType {
 		case "ref":
+			if !s.IsRefCompletionEnabled() {
+				return *response
+			}
 			s.createRefResponse(line, params, response)
 		case "source":
+			if !s.IsSourceCompletionEnabled() {
+				s.Logger.Debugf("Source completion disabled; skipping source completion")
+				return *response
+			}
 			s.createSourceResponse(line, params, response)
 		}
 	}
@@ -201,7 +220,10 @@ func parseCompletionType(lineContent string) (string, error) {
 	)
 }
 
-func extractModelRefUnderCursor(lineContent string, position lsp.TextDocumentPosition) (string, bool) {
+func extractModelRefUnderCursor(
+	lineContent string,
+	position lsp.TextDocumentPosition,
+) (string, bool) {
 	// Group 1: Matches content inside single quotes
 	// Group 2: Matches content inside double quotes
 	re := regexp.MustCompile(`ref\s*\(\s*(?:'([^']+)'|"([^"]+)")\s*\)`)
@@ -235,10 +257,15 @@ func extractModelRefUnderCursor(lineContent string, position lsp.TextDocumentPos
 // extractSourceContextUnderCursor returns the completion context for a
 // source(...) call, determining whether the cursor is positioned on the
 // source-name argument or the table-name argument.
-func extractSourceContextUnderCursor(lineContent string, position lsp.TextDocumentPosition) (SourceCompletionContext, bool) {
+func extractSourceContextUnderCursor(
+	lineContent string,
+	position lsp.TextDocumentPosition,
+) (SourceCompletionContext, bool) {
 	// Matches: source( <arg1> , <arg2> )
 	// We look for the cursor being inside arg1 (source name) or arg2 (table name).
-	re := regexp.MustCompile(`source\s*\(\s*(?:'([^']*)'|"([^"]*)")\s*(?:,\s*(?:'([^']*)'|"([^"]*)")\s*)?\)`)
+	re := regexp.MustCompile(
+		`source\s*\(\s*(?:'([^']*)'|"([^"]*)")\s*(?:,\s*(?:'([^']*)'|"([^"]*)")\s*)?\)`,
+	)
 	matches := re.FindAllStringSubmatchIndex(lineContent, -1)
 
 	for _, match := range matches {
@@ -292,7 +319,9 @@ func extractSourceContextUnderCursor(lineContent string, position lsp.TextDocume
 	}
 
 	// Fallback: table name partial (source name closed, comma seen, table not closed)
-	rePartialTable := regexp.MustCompile(`source\s*\(\s*(?:'([^']*)'|"([^"]*)")\s*,\s*['"]([^'"]*)$`)
+	rePartialTable := regexp.MustCompile(
+		`source\s*\(\s*(?:'([^']*)'|"([^"]*)")\s*,\s*['"]([^'"]*)$`,
+	)
 	partialTableMatch := rePartialTable.FindStringSubmatchIndex(lineContent[:position.Character])
 	if partialTableMatch != nil {
 		srcName := ""

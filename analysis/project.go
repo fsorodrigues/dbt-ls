@@ -73,6 +73,7 @@ func (s *State) isProjectConfigFile(path string) bool {
 func (s *State) deactivateProject(root, message string) {
 	wasActive := s.IsServerActive()
 	s.setServerActive(false)
+	s.disableProjectCapabilities()
 	s.resetProjectState()
 	s.ProjectMu.Lock()
 	s.ProjectConfigPath = ""
@@ -93,6 +94,7 @@ func (s *State) activateProject(root, configPath string, project DbtProject) err
 		s.deactivateProject(root, fmt.Sprintf("dbt-ls: project could not be indexed: %s", err))
 		return err
 	}
+	s.enableProjectCapabilities(s.sourcesEnabled())
 	s.setServerActive(true)
 	return nil
 }

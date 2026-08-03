@@ -25,36 +25,42 @@ func WorkspacePath(uri string) (string, error) {
 }
 
 type State struct {
-	Documents           map[string]*Document
-	DbtConfigMu         sync.Mutex
-	ProjectMu           sync.RWMutex
-	ProjectLifecycleMu  sync.Mutex
-	DbtConfig           DbtConfig
-	DbtRoots            []string
-	SourcesValid        bool
-	SourceFileErrors    map[string][]sourceFileError // keyed by file path; guarded by DbtConfigMu
-	NotifCh             chan lsp.ShowMessageParams
-	configFileHashes    map[string]string // file path → sha256 of last-processed content
-	configFileHashesMu  sync.Mutex
-	DbtSourcesByFile    map[string]DbtSources
-	SourceTableIndex    map[sourceTableKey]map[string][]sourceDecl
-	Root                []lsp.WorkspaceFolder // LSP-provided workspace folders (Name/URI)
-	RootPaths           []string              // parsed filesystem paths, index-aligned with Root
-	ServerActive        bool
-	ProjectRoot         string
-	ProjectConfigPath   string
-	ShutdownRequested   bool
-	DbtModelsMu         sync.Mutex
-	DbtModels           *trie.Trie[string]
-	DbtModelExtension   string
-	DbtConfigExtensions []string
-	ModelRoots          []string
-	ConfigRoot          string
-	Logger              *logger.Logger
-	Writer              io.Writer
-	ProjectWatcher      *DbtWatcher
-	watchedDirs         map[string]struct{}
-	watchedDirsMu       sync.Mutex
+	Documents                map[string]*Document
+	DbtConfigMu              sync.Mutex
+	ProjectMu                sync.RWMutex
+	ProjectLifecycleMu       sync.Mutex
+	DbtConfig                DbtConfig
+	DbtRoots                 []string
+	ServerActive             bool
+	ServerCapabilitiesStatus ServerCapabilitiesStatus
+	SourceFileErrors         map[string][]sourceFileError // keyed by file path; guarded by DbtConfigMu
+	NotifCh                  chan lsp.ShowMessageParams
+	configFileHashes         map[string]string // file path → sha256 of last-processed content
+	configFileHashesMu       sync.Mutex
+	DbtSourcesByFile         map[string]DbtSources
+	SourceTableIndex         map[sourceTableKey]map[string][]sourceDecl
+	Root                     []lsp.WorkspaceFolder // LSP-provided workspace folders (Name/URI)
+	RootPaths                []string              // parsed filesystem paths, index-aligned with Root
+	ProjectRoot              string
+	ProjectConfigPath        string
+	ShutdownRequested        bool
+	DbtModelsMu              sync.Mutex
+	DbtModels                *trie.Trie[string]
+	DbtModelExtension        string
+	DbtConfigExtensions      []string
+	ModelRoots               []string
+	ConfigRoot               string
+	Logger                   *logger.Logger
+	Writer                   io.Writer
+	ProjectWatcher           *DbtWatcher
+	watchedDirs              map[string]struct{}
+	watchedDirsMu            sync.Mutex
+}
+
+type ServerCapabilitiesStatus struct {
+	SourcesEnabled     bool
+	RefsEnabled        bool
+	DefinitionsEnabled bool
 }
 
 func (s *State) IsServerActive() bool {
@@ -65,6 +71,56 @@ func (s *State) IsServerActive() bool {
 
 func (s *State) SetServerActive(active bool) {
 	s.setServerActive(active)
+}
+
+func (s *State) setServerCapabilitiesStatus(status ServerCapabilitiesStatus) {
+	s.ProjectMu.Lock()
+	s.ServerCapabilitiesStatus = status
+	s.ProjectMu.Unlock()
+}
+
+func (s *State) setSourcesEnabled(enabled bool) {
+	s.ProjectMu.Lock()
+	s.ServerCapabilitiesStatus.SourcesEnabled = enabled
+	s.ProjectMu.Unlock()
+}
+
+func (s *State) sourcesEnabled() bool {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ServerCapabilitiesStatus.SourcesEnabled
+}
+
+func (s *State) enableProjectCapabilities(sourcesEnabled bool) {
+	s.ProjectMu.Lock()
+	s.ServerCapabilitiesStatus = ServerCapabilitiesStatus{
+		SourcesEnabled:     sourcesEnabled,
+		RefsEnabled:        true,
+		DefinitionsEnabled: true,
+	}
+	s.ProjectMu.Unlock()
+}
+
+func (s *State) disableProjectCapabilities() {
+	s.setServerCapabilitiesStatus(ServerCapabilitiesStatus{})
+}
+
+func (s *State) IsSourceCompletionEnabled() bool {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ServerActive && s.ServerCapabilitiesStatus.SourcesEnabled
+}
+
+func (s *State) IsRefCompletionEnabled() bool {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ServerActive && s.ServerCapabilitiesStatus.RefsEnabled
+}
+
+func (s *State) IsDefinitionEnabled() bool {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ServerActive && s.ServerCapabilitiesStatus.DefinitionsEnabled
 }
 
 func (s *State) SetProjectRoot(root string) {
@@ -109,14 +165,18 @@ func NewState(
 	models := trie.New[string]()
 
 	return &State{
-		Documents:           map[string]*Document{},
-		SourcesValid:        true,
+		Documents:    map[string]*Document{},
+		ServerActive: false,
+		ServerCapabilitiesStatus: ServerCapabilitiesStatus{
+			SourcesEnabled:     false,
+			RefsEnabled:        false,
+			DefinitionsEnabled: false,
+		},
 		SourceFileErrors:    map[string][]sourceFileError{},
 		NotifCh:             make(chan lsp.ShowMessageParams, 16),
 		configFileHashes:    map[string]string{},
 		DbtSourcesByFile:    map[string]DbtSources{},
 		SourceTableIndex:    map[sourceTableKey]map[string][]sourceDecl{},
-		ServerActive:        false,
 		ShutdownRequested:   false,
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
@@ -132,5 +192,6 @@ func NewState(
 
 func (s *State) Shutdown() {
 	s.setServerActive(false)
+	s.disableProjectCapabilities()
 	s.ShutdownRequested = true
 }
