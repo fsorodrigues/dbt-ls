@@ -1,8 +1,11 @@
 package analysis
 
 import (
+	"fmt"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 
@@ -49,6 +52,7 @@ type State struct {
 	DbtModelExtension        string
 	DbtConfigExtensions      []string
 	ModelRoots               []string
+	MacroRoots               []string
 	ConfigRoot               string
 	Logger                   *logger.Logger
 	Writer                   io.Writer
@@ -60,6 +64,7 @@ type State struct {
 type ServerCapabilitiesStatus struct {
 	SourcesEnabled     bool
 	RefsEnabled        bool
+	MacrosEnabled      bool
 	DefinitionsEnabled bool
 }
 
@@ -101,6 +106,30 @@ func (s *State) enableProjectCapabilities(sourcesEnabled bool) {
 	s.ProjectMu.Unlock()
 }
 
+func (s *State) setRefsEnabled(enabled bool) {
+	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
+	s.ServerCapabilitiesStatus.RefsEnabled = enabled
+}
+
+func (s *State) setMacrosEnabled() {
+	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
+	s.ServerCapabilitiesStatus.MacrosEnabled = true
+}
+
+func (s *State) macrosEnabled() bool {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ServerCapabilitiesStatus.MacrosEnabled
+}
+
+func (s *State) setDefinitionsEnabled(enabled bool) {
+	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
+	s.ServerCapabilitiesStatus.DefinitionsEnabled = enabled
+}
+
 func (s *State) disableProjectCapabilities() {
 	s.setServerCapabilitiesStatus(ServerCapabilitiesStatus{})
 }
@@ -115,6 +144,12 @@ func (s *State) IsRefCompletionEnabled() bool {
 	s.ProjectMu.RLock()
 	defer s.ProjectMu.RUnlock()
 	return s.ServerActive && s.ServerCapabilitiesStatus.RefsEnabled
+}
+
+func (s *State) IsMacrosEnabled() bool {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ServerActive && s.ServerCapabilitiesStatus.MacrosEnabled
 }
 
 func (s *State) IsDefinitionEnabled() bool {
@@ -140,6 +175,46 @@ func (s *State) setServerActive(active bool) {
 	s.ProjectMu.Lock()
 	defer s.ProjectMu.Unlock()
 	s.ServerActive = active
+}
+
+func pathExists(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("path is not a directory")
+	}
+	return nil
+}
+
+func (s *State) SetModelRoots(path []string) error {
+	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
+
+	for _, root := range path {
+		if err := pathExists(filepath.Join(s.ProjectRoot, root)); err != nil {
+			s.ServerCapabilitiesStatus.RefsEnabled = false
+			s.ServerCapabilitiesStatus.DefinitionsEnabled = false
+			return fmt.Errorf("model root %q: %w", root, err)
+		}
+	}
+	s.ModelRoots = path
+	return nil
+}
+
+func (s *State) SetMacroRoots(path []string) error {
+	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
+
+	for _, root := range path {
+		if err := pathExists(filepath.Join(s.ProjectRoot, root)); err != nil {
+			s.ServerCapabilitiesStatus.MacrosEnabled = false
+			return fmt.Errorf("macro root %q: %w", root, err)
+		}
+	}
+	s.MacroRoots = path
+	return nil
 }
 
 type sourceTableKey struct {
