@@ -86,14 +86,35 @@ func (s *State) deactivateProject(root, message string) {
 func (s *State) activateProject(root string, project DbtProject) error {
 	s.resetProjectState()
 	s.SetProjectRoot(root)
-	s.ModelRoots = project.ModelPaths
-	if err := s.ScanRootPath(root); err != nil {
+	var activationErr error
+
+	if err := s.SetModelRoots(project.ModelPaths); err != nil {
+		s.NotifyProject(fmt.Sprintf("dbt-ls: model functionality unavailable: %s", err))
+		activationErr = err
+	} else if err := s.ScanModelRoots(root); err != nil {
+		s.setRefsEnabled(false)
+		s.setDefinitionsEnabled(false)
+		activationErr = err
+	} else {
+		s.setRefsEnabled(true)
+		s.setDefinitionsEnabled(true)
+	}
+
+	if err := s.SetMacroRoots(project.MacroPaths); err != nil {
+		s.NotifyProject(fmt.Sprintf("dbt-ls: macro functionality unavailable: %s", err))
+		if activationErr == nil {
+			activationErr = err
+		}
+	} else {
+		s.setMacrosEnabled()
+	}
+
+	if err := s.ScanConfigRoot(root); err != nil {
 		s.deactivateProject(root, fmt.Sprintf("dbt-ls: project could not be indexed: %s", err))
 		return err
 	}
-	s.enableProjectCapabilities(s.sourcesEnabled())
 	s.setServerActive(true)
-	return nil
+	return activationErr
 }
 
 func (s *State) ActivateProject(root string, project DbtProject) error {

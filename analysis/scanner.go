@@ -111,6 +111,13 @@ func (s *State) ScanProjectFiles(root string) error {
 }
 
 func (s *State) ScanRootPath(rootPath string) error {
+	if err := s.ScanModelRoots(rootPath); err != nil {
+		return err
+	}
+	return s.ScanConfigRoot(rootPath)
+}
+
+func (s *State) ScanModelRoots(rootPath string) error {
 	modelDirs := make([]string, 0, len(s.ModelRoots))
 	for _, modelRoot := range s.ModelRoots {
 		modelDirs = append(modelDirs, filepath.Join(rootPath, modelRoot))
@@ -121,7 +128,10 @@ func (s *State) ScanRootPath(rootPath string) error {
 	if err := s.ScanAndWatchDirs(modelDirs, s.FindModelFilesRecursive); err != nil {
 		return err
 	}
+	return nil
+}
 
+func (s *State) ScanConfigRoot(rootPath string) error {
 	configDir := filepath.Join(rootPath, s.ConfigRoot)
 	return s.ScanAndWatchDirs([]string{configDir}, s.FindConfigFilesRecursive)
 }
