@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -51,6 +52,50 @@ func TestActivateProjectEnablesCapabilities(t *testing.T) {
 	}
 	if !s.IsDefinitionEnabled() {
 		t.Fatal("definition disabled after project activation")
+	}
+}
+
+func TestInvalidModelRootDisablesModelCapabilitiesOnly(t *testing.T) {
+	root := t.TempDir()
+	project := DbtProject{ModelPaths: []string{"missing"}, MacroPaths: []string{"macros"}}
+	if err := os.Mkdir(filepath.Join(root, "macros"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newTestState()
+	if err := s.ActivateProject(root, project); err == nil {
+		t.Fatal("expected invalid model root error")
+	}
+	if !s.IsServerActive() {
+		t.Fatal("invalid model root deactivated server")
+	}
+	if s.IsRefCompletionEnabled() || s.IsDefinitionEnabled() {
+		t.Fatal("model capabilities enabled with invalid model root")
+	}
+	if !s.IsMacrosEnabled() {
+		t.Fatal("macro capability disabled by invalid model root")
+	}
+}
+
+func TestInvalidMacroRootDisablesMacroCapabilityOnly(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "models"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	project := DbtProject{ModelPaths: []string{"models"}, MacroPaths: []string{"missing"}}
+
+	s := newTestState()
+	if err := s.ActivateProject(root, project); err == nil {
+		t.Fatal("expected invalid macro root error")
+	}
+	if !s.IsServerActive() {
+		t.Fatal("invalid macro root deactivated server")
+	}
+	if !s.IsRefCompletionEnabled() || !s.IsDefinitionEnabled() {
+		t.Fatal("model capabilities disabled by invalid macro root")
+	}
+	if s.IsMacrosEnabled() {
+		t.Fatal("macro capability enabled with invalid macro root")
 	}
 }
 
