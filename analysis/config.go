@@ -32,5 +32,6 @@ type DbtSources struct {
 type DbtProject struct {
 	Name       string   `yaml:"name"`
 	ModelPaths []string `yaml:"model-paths"`
+	MacroPaths []string `yaml:"macro-paths"`
 	DbtSources
 }

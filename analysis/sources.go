@@ -33,6 +33,7 @@ func (s *State) resetProjectState() {
 	s.SourceTableIndex = map[sourceTableKey]map[string][]sourceDecl{}
 	s.DbtConfigMu.Unlock()
 	s.ModelRoots = []string{"models"}
+	s.MacroRoots = []string{"macros"}
 
 	s.configFileHashesMu.Lock()
 	s.configFileHashes = map[string]string{}

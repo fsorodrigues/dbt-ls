@@ -138,6 +138,9 @@ func TestReconcileProjectDeactivatesAndReactivates(t *testing.T) {
 	s.SetProjectRoot(root)
 	writeTestFile(t, projectPath, "name: example\nmodel-paths: [models]\n")
 	writeTestFile(t, filepath.Join(root, "models", "orders.sql"), "select 1\n")
+	if err := os.Mkdir(filepath.Join(root, "macros"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	s.reconcileProject(root)
 	if !s.IsServerActive() {

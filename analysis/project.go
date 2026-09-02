@@ -40,6 +40,9 @@ func (s *State) ParseDbtConfig(rootPath string) (DbtProject, error) {
 	if project.ModelPaths == nil {
 		project.ModelPaths = []string{"models"}
 	}
+	if project.MacroPaths == nil {
+		project.MacroPaths = []string{"macros"}
+	}
 
 	s.Logger.Debugf("Dbt project configuration found: %s", configPath)
 	return project, nil

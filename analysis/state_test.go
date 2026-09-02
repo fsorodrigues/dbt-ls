@@ -27,6 +27,9 @@ func TestActivateProjectEnablesCapabilities(t *testing.T) {
 	projectPath := filepath.Join(root, "dbt_project.yml")
 	writeTestFile(t, projectPath, "name: example\nmodel-paths: [models]\n")
 	writeTestFile(t, filepath.Join(root, "models", "orders.sql"), "select 1\n")
+	if err := os.Mkdir(filepath.Join(root, "macros"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	s := newTestState()
 	project, err := s.ParseDbtConfig(root)
