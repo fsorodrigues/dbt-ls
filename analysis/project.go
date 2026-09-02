@@ -74,16 +74,13 @@ func (s *State) isProjectConfigFile(path string) bool {
 }
 
 func (s *State) deactivateProject(root, message string) {
-	wasActive := s.IsServerActive()
 	s.setServerActive(false)
 	s.disableProjectCapabilities()
 	s.resetProjectState()
 	s.ProjectMu.Lock()
 	s.ProjectConfigPath = ""
 	s.ProjectMu.Unlock()
-	if wasActive {
-		s.NotifyProject(message)
-	}
+	s.NotifyProject(message)
 }
 
 func (s *State) activateProject(root string, project DbtProject) error {

@@ -174,7 +174,7 @@ func TestReconcileProjectDeactivatesAndReactivates(t *testing.T) {
 	}
 }
 
-func TestRepeatedProjectIndexingFailureNotifiesOnce(t *testing.T) {
+func TestRepeatedProjectIndexingFailureKeepsProjectActive(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(
 		t,
@@ -183,25 +183,17 @@ func TestRepeatedProjectIndexingFailureNotifiesOnce(t *testing.T) {
 	)
 	s := newTestState()
 	s.SetProjectRoot(root)
-	s.SetServerActive(true)
-
 	s.reconcileProject(root)
-	s.reconcileProject(root)
+	if !s.IsServerActive() {
+		t.Fatal("invalid model root deactivated server")
+	}
 
 	select {
 	case notif := <-s.NotifCh:
-		if notif.Message != "dbt-ls: project could not be indexed: lstat "+filepath.Join(
-			root,
-			"missing",
-		)+": no such file or directory" {
+		if notif.Message != "dbt-ls: model functionality unavailable: model root \"missing\": stat "+filepath.Join(root, "missing")+": no such file or directory" {
 			t.Fatalf("unexpected notification: %q", notif.Message)
 		}
 	default:
-		t.Fatal("expected indexing failure notification")
-	}
-	select {
-	case notif := <-s.NotifCh:
-		t.Fatalf("repeated indexing failure sent notification: %q", notif.Message)
-	default:
+		t.Fatal("expected model functionality notification")
 	}
 }
