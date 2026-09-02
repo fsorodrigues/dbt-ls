@@ -81,8 +81,8 @@ func (s *State) setServerCapabilitiesStatus(status ServerCapabilitiesStatus) {
 
 func (s *State) setSourcesEnabled(enabled bool) {
 	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
 	s.ServerCapabilitiesStatus.SourcesEnabled = enabled
-	s.ProjectMu.Unlock()
 }
 
 func (s *State) sourcesEnabled() bool {
@@ -125,9 +125,9 @@ func (s *State) IsDefinitionEnabled() bool {
 
 func (s *State) SetProjectRoot(root string) {
 	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
 	s.ProjectRoot = root
 	s.ProjectConfigPath = s.GetProjectConfigPath(root)
-	s.ProjectMu.Unlock()
 }
 
 func (s *State) ProjectRootPath() string {
@@ -138,8 +138,8 @@ func (s *State) ProjectRootPath() string {
 
 func (s *State) setServerActive(active bool) {
 	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
 	s.ServerActive = active
-	s.ProjectMu.Unlock()
 }
 
 type sourceTableKey struct {
