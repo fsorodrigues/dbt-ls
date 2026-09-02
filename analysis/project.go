@@ -86,13 +86,10 @@ func (s *State) deactivateProject(root, message string) {
 	}
 }
 
-func (s *State) activateProject(root, configPath string, project DbtProject) error {
+func (s *State) activateProject(root string, project DbtProject) error {
 	s.resetProjectState()
+	s.SetProjectRoot(root)
 	s.ModelRoots = project.ModelPaths
-	s.ProjectMu.Lock()
-	s.ProjectRoot = root
-	s.ProjectConfigPath = configPath
-	s.ProjectMu.Unlock()
 	if err := s.ScanRootPath(root); err != nil {
 		s.deactivateProject(root, fmt.Sprintf("dbt-ls: project could not be indexed: %s", err))
 		return err
@@ -102,8 +99,8 @@ func (s *State) activateProject(root, configPath string, project DbtProject) err
 	return nil
 }
 
-func (s *State) ActivateProject(root, configPath string, project DbtProject) error {
-	return s.activateProject(root, configPath, project)
+func (s *State) ActivateProject(root string, project DbtProject) error {
+	return s.activateProject(root, project)
 }
 
 func (s *State) reconcileProject(root string) {
@@ -121,7 +118,7 @@ func (s *State) reconcileProject(root string) {
 		s.Logger.Errorf("Unable to reconcile dbt project: %s", err)
 		return
 	}
-	if err := s.activateProject(root, configPath, project); err != nil {
+	if err := s.activateProject(root, project); err != nil {
 		return
 	}
 	s.Logger.Tracef("dbt project activated: %s", configPath)

@@ -126,6 +126,7 @@ func (s *State) IsDefinitionEnabled() bool {
 func (s *State) SetProjectRoot(root string) {
 	s.ProjectMu.Lock()
 	s.ProjectRoot = root
+	s.ProjectConfigPath = s.GetProjectConfigPath(root)
 	s.ProjectMu.Unlock()
 }
 

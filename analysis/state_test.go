@@ -36,7 +36,7 @@ func TestActivateProjectEnablesCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ActivateProject(root, projectPath, project); err != nil {
+	if err := s.ActivateProject(root, project); err != nil {
 		t.Fatal(err)
 	}
 

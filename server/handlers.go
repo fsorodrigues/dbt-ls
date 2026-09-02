@@ -35,7 +35,7 @@ func handleInitialize(s *Server, state *analysis.State, raw lsp.ClientMessage, _
 			state.SetProjectRoot(rootPath)
 			state.NotifyProject("dbt-ls: no dbt project identified; server inactive")
 		} else {
-			state.ActivateProject(rootPath, state.GetProjectConfigPath(rootPath), project)
+			state.ActivateProject(rootPath, project)
 			s.Logger.Info("Root status: true")
 		}
 
