@@ -112,10 +112,10 @@ func (s *State) setRefsEnabled(enabled bool) {
 	s.ServerCapabilitiesStatus.RefsEnabled = enabled
 }
 
-func (s *State) setMacrosEnabled() {
+func (s *State) setMacrosEnabled(enabled bool) {
 	s.ProjectMu.Lock()
 	defer s.ProjectMu.Unlock()
-	s.ServerCapabilitiesStatus.MacrosEnabled = true
+	s.ServerCapabilitiesStatus.MacrosEnabled = enabled
 }
 
 func (s *State) macrosEnabled() bool {
