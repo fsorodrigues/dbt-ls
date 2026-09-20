@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/fsorodrigues/dbt-ls/dbt"
 	"github.com/fsorodrigues/dbt-ls/logger"
 	"github.com/fsorodrigues/dbt-ls/lsp"
 
@@ -50,6 +51,9 @@ type State struct {
 	DbtModelsMu              sync.Mutex
 	DbtModels                *trie.Trie[string]
 	DbtModelExtension        string
+	DbtMacrosMu              sync.Mutex
+	DbtMacros                *trie.Trie[dbt.Macro]
+	DbtMacroExtension        string
 	DbtConfigExtensions      []string
 	ModelRoots               []string
 	MacroRoots               []string
@@ -239,6 +243,7 @@ func NewState(
 	projectWatcher *DbtWatcher,
 ) *State {
 	models := trie.New[string]()
+	macros := trie.New[dbt.Macro]()
 
 	return &State{
 		Documents:    map[string]*Document{},
@@ -256,6 +261,8 @@ func NewState(
 		ShutdownRequested:   false,
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
+		DbtMacros:           macros,
+		DbtMacroExtension:   ".sql",
 		DbtConfigExtensions: []string{".yml", ".yaml"},
 		ModelRoots:          []string{"models"},
 		ConfigRoot:          ".",
