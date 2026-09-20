@@ -143,6 +143,9 @@ func (s *State) WatchProject(ctx context.Context) {
 				} else if s.isModelFile(base) {
 					s.Logger.Tracef("[WatchProject]: Model Deletion event: %s", event.Name)
 					s.RemoveModelFromIndex(event.Name)
+				} else if s.isMacroFile(base) {
+					s.Logger.Tracef("[WatchProject]: Macro Deletion Event %s", event.Name)
+					s.RemoveMacroFromIndex(event.Name)
 				}
 			}
 
@@ -152,6 +155,10 @@ func (s *State) WatchProject(ctx context.Context) {
 					s.ProcessNewConfigYaml(event.Name)
 				} else if s.isModelFile(base) {
 					s.Logger.Tracef("[WatchProject]: Model Write event: %s", event.Name)
+					// do nothing
+					continue
+				} else if s.isMacroFile(base) {
+					s.Logger.Tracef("[WatchProject]: Macro Write event: %s", event.Name)
 					// do nothing
 					continue
 				}
@@ -165,6 +172,9 @@ func (s *State) WatchProject(ctx context.Context) {
 				} else if s.isModelFile(base) {
 					s.Logger.Tracef("[WatchProject]: Model Renaming Event %s", event.Name)
 					s.RemoveModelFromIndex(event.Name)
+				} else if s.isMacroFile(base) {
+					s.Logger.Tracef("[WatchProject]: Macro Renaming Event %s", event.Name)
+					s.RemoveMacroFromIndex(event.Name)
 				}
 			}
 
