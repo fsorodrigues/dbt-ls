@@ -3,6 +3,7 @@ package analysis
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 var (
@@ -26,7 +27,17 @@ func (s *State) isSkippableTempArtifact(path string) bool {
 }
 
 func (s *State) isModelFile(path string) bool {
-	return filepath.Ext(path) == s.DbtModelExtension
+	return filepath.Ext(path) == s.DbtModelExtension &&
+		slices.ContainsFunc(s.ModelRoots, func(sub string) bool {
+			return strings.Contains(path, sub)
+		})
+}
+
+func (s *State) isMacroFile(path string) bool {
+	return filepath.Ext(path) == s.DbtMacroExtension &&
+		slices.ContainsFunc(s.MacroRoots, func(sub string) bool {
+			return strings.Contains(path, sub)
+		})
 }
 
 func (s *State) isConfigFile(path string) bool {
