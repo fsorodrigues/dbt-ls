@@ -105,6 +105,9 @@ func (s *State) activateProject(root string, project DbtProject) error {
 		if activationErr == nil {
 			activationErr = err
 		}
+	} else if err := s.ScanMacroRoots(root); err != nil {
+		s.setMacrosEnabled(false)
+		activationErr = err
 	} else {
 		s.setMacrosEnabled(true)
 	}

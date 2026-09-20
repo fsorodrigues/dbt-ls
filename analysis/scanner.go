@@ -4,6 +4,8 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
+
+	"github.com/fsorodrigues/dbt-ls/dbt"
 )
 
 type ScanCallback func(string) error
@@ -85,6 +87,27 @@ func (s *State) FindModelFilesRecursive(dirPattern string) error {
 	return nil
 }
 
+func (s *State) FindMacroFilesRecursive(dirPattern string) error {
+	s.Logger.Infof(
+		"Starting scan. Looking for macros with extension %s",
+		s.DbtMacroExtension,
+	)
+
+	macros, err := s.findFilesRecursive(dirPattern, []string{s.DbtMacroExtension})
+	if err != nil {
+		s.Logger.Errorf("Error finding macro files recursively: %s", err)
+		return err
+	}
+
+	s.Logger.Debugf("Adding %d macros to state", len(macros))
+	for _, file := range macros {
+		macro := dbt.NewMacro(file)
+		s.AddNewMacroToIndex(file, macro)
+	}
+
+	return nil
+}
+
 func (s *State) FindConfigFilesRecursive(dirPattern string) error {
 	s.Logger.Infof(
 		"Starting scan. Looking for configs with extensions %s",
@@ -126,6 +149,20 @@ func (s *State) ScanModelRoots(rootPath string) error {
 		s.Logger.Info("No model paths configured; skipping model scan")
 	}
 	if err := s.ScanAndWatchDirs(modelDirs, s.FindModelFilesRecursive); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *State) ScanMacroRoots(rootPath string) error {
+	macroDirs := make([]string, 0, len(s.MacroRoots))
+	for _, macroRoot := range s.MacroRoots {
+		macroDirs = append(macroDirs, filepath.Join(rootPath, macroRoot))
+	}
+	if len(macroDirs) == 0 {
+		s.Logger.Info("No macro paths configured; skipping macro scan")
+	}
+	if err := s.ScanAndWatchDirs(macroDirs, s.FindMacroFilesRecursive); err != nil {
 		return err
 	}
 	return nil
