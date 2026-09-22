@@ -21,6 +21,9 @@ func newCounter(x int) *int {
 func (s *State) OpenDocument(uri, text string, version int) {
 	s.Logger.Infof("Document %s opened", uri)
 
+	s.DocumentsMu.Lock()
+	defer s.DocumentsMu.Unlock()
+
 	s.Documents[uri] = &Document{
 		Data:      rope.New([]rune(text)),
 		EditCount: newCounter(0),
@@ -76,11 +79,6 @@ func (s *State) applyUpdate(doc *Document, change lsp.TextDocumentContentChangeE
 }
 
 func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeEvent, version int) {
-	doc, ok := s.Documents[uri]
-	if !ok || doc == nil {
-		s.Logger.Errorf("Update requested for unopened document: %s", uri)
-		return
-	}
 	changeContents, err := json.Marshal(change.Range)
 	if err != nil {
 		s.Logger.Errorf("Error creating json from change.Range: %s", err)
@@ -89,5 +87,14 @@ func (s *State) UpdateDocument(uri string, change lsp.TextDocumentContentChangeE
 	s.Logger.Tracef("Document %s updated.", uri)
 	s.Logger.Tracef("Text: %s", change.Text)
 	s.Logger.Tracef("Text: %v", string(changeContents))
+
+	s.DocumentsMu.Lock()
+	defer s.DocumentsMu.Unlock()
+
+	doc, ok := s.Documents[uri]
+	if !ok || doc == nil {
+		s.Logger.Errorf("Update requested for unopened document: %s", uri)
+		return
+	}
 	s.applyUpdate(doc, change, version)
 }

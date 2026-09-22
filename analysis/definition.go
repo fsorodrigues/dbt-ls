@@ -21,12 +21,11 @@ func (s *State) TextDocumentGoToDefinition(
 		return response
 	}
 
-	doc, ok := s.Documents[params.TextDocument.URI]
-	if !ok || doc == nil {
+	line, ok := s.documentLine(params.TextDocument.URI, params.Position.Line)
+	if !ok {
 		s.Logger.Errorf("Definition requested for unopened document: %s", params.TextDocument.URI)
 		return response
 	}
-	line := getLine(doc.Data, params.Position.Line)
 	s.Logger.Tracef("Looking for prefix with model reference in line %s", line)
 	modelRef, check := extractModelRefUnderCursor(string(line), params.Position)
 

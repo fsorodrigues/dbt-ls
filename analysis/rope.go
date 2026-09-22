@@ -72,3 +72,14 @@ func getLine(r *Rope, targetLine int) string {
 
 	return string(r.Slice(startOffset, endOffset))
 }
+
+func (s *State) documentLine(uri string, line int) (string, bool) {
+	s.DocumentsMu.RLock()
+	defer s.DocumentsMu.RUnlock()
+
+	doc, ok := s.Documents[uri]
+	if !ok || doc == nil {
+		return "", false
+	}
+	return getLine(doc.Data, line), true
+}

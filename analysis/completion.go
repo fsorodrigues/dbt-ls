@@ -173,12 +173,11 @@ func (s *State) TextDocumentCodeCompletion(
 		return *response
 	}
 
-	doc, ok := s.Documents[params.TextDocument.URI]
-	if !ok || doc == nil {
+	line, ok := s.documentLine(params.TextDocument.URI, params.Position.Line)
+	if !ok {
 		s.Logger.Errorf("Completion requested for unopened document: %s", params.TextDocument.URI)
 		return *response
 	}
-	line := getLine(doc.Data, params.Position.Line)
 	completionType, err := parseCompletionType(line)
 
 	if err == nil {
