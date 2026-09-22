@@ -101,7 +101,7 @@ func (s *State) FindMacroFilesRecursive(dirPattern string) error {
 
 	s.Logger.Debugf("Adding %d macros to state", len(macros))
 	for _, file := range macros {
-		macro := dbt.NewMacro(file)
+		macro := dbt.Macro{File: file}
 		s.AddNewMacroToIndex(file, macro)
 	}
 
