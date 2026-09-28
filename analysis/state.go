@@ -54,6 +54,7 @@ type State struct {
 	DbtModelExtension        string
 	DbtMacrosMu              sync.Mutex
 	DbtMacros                *trie.Trie[dbt.Macro]
+	DbtMacroFiles            map[string][]string
 	DbtMacroExtension        string
 	DbtConfigExtensions      []string
 	ModelRoots               []string
@@ -95,12 +96,6 @@ func (s *State) setSourcesEnabled(enabled bool) {
 	s.ServerCapabilitiesStatus.SourcesEnabled = enabled
 }
 
-func (s *State) sourcesEnabled() bool {
-	s.ProjectMu.RLock()
-	defer s.ProjectMu.RUnlock()
-	return s.ServerCapabilitiesStatus.SourcesEnabled
-}
-
 func (s *State) enableProjectCapabilities(sourcesEnabled bool) {
 	s.ProjectMu.Lock()
 	s.ServerCapabilitiesStatus = ServerCapabilitiesStatus{
@@ -121,12 +116,6 @@ func (s *State) setMacrosEnabled(enabled bool) {
 	s.ProjectMu.Lock()
 	defer s.ProjectMu.Unlock()
 	s.ServerCapabilitiesStatus.MacrosEnabled = enabled
-}
-
-func (s *State) macrosEnabled() bool {
-	s.ProjectMu.RLock()
-	defer s.ProjectMu.RUnlock()
-	return s.ServerCapabilitiesStatus.MacrosEnabled
 }
 
 func (s *State) setDefinitionsEnabled(enabled bool) {
@@ -263,6 +252,7 @@ func NewState(
 		DbtModels:           models,
 		DbtModelExtension:   ".sql",
 		DbtMacros:           macros,
+		DbtMacroFiles:       map[string][]string{},
 		DbtMacroExtension:   ".sql",
 		DbtConfigExtensions: []string{".yml", ".yaml"},
 		ModelRoots:          []string{"models"},

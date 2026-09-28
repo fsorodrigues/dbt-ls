@@ -1,27 +1,96 @@
 package analysis
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/fsorodrigues/dbt-ls/dbt"
+	"github.com/fsorodrigues/dbt-ls/jinja"
 )
 
-func (s *State) AddNewMacroToIndex(file string, macro dbt.Macro) {
-	s.DbtMacrosMu.Lock()
-	defer s.DbtMacrosMu.Unlock()
-	s.Logger.Tracef("Adding file: %s", file)
-	s.DbtMacros.Put(
-		strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtMacroExtension),
-		macro,
-	)
+func (s *State) AddNewMacroFile(path string) {
+	src, err := os.ReadFile(path)
+	if err != nil {
+		s.Logger.Errorf("Error reading macro file %s: %s", path, err)
+		return
+	}
+	if !utf8.Valid(src) {
+		s.Logger.Errorf("Macro file is not valid UTF-8: %s", path)
+		return
+	}
+
+	definitions := jinja.Definitions(bytes.Runes(src))
+	macroNames := make([]string, 0, len(definitions))
+	macros := make([]dbt.Macro, 0, len(definitions))
+	for _, def := range definitions {
+		if def.Kind != jinja.DefMacro {
+			continue
+		}
+
+		macros = append(macros, dbt.Macro{
+			Name: def.Name,
+			File: filepath.Clean(path),
+			Line: def.Line,
+			Args: toArgs(def.Params),
+			Doc:  def.Doc,
+		})
+		macroNames = append(macroNames, strings.ToLower(def.Name))
+	}
+
+	s.RemoveMacroFileFromIndex(path)
+
+	for i, macro := range macros {
+		s.AddNewMacroToIndex(macroNames[i], macro)
+	}
+
+	s.AddNewMacroFileToIndex(path, macroNames)
 }
 
-func (s *State) RemoveMacroFromIndex(file string) {
+func toArgs(params []jinja.Param) []dbt.Arg {
+	args := make([]dbt.Arg, 0, len(params))
+	for _, p := range params {
+		args = append(args, dbt.Arg{Name: p.Name, Default: p.Default})
+	}
+	return args
+}
+
+func (s *State) AddNewMacroFileToIndex(path string, macroNames []string) {
 	s.DbtMacrosMu.Lock()
 	defer s.DbtMacrosMu.Unlock()
-	s.Logger.Tracef("Removing file: %s", file)
-	s.DbtMacros.Remove(
-		strings.TrimSuffix(strings.ToLower(filepath.Base(file)), s.DbtMacroExtension),
-	)
+	s.Logger.Tracef("Adding macro file: %s", path)
+
+	name := filepath.Clean(path)
+	s.DbtMacroFiles[name] = macroNames
+}
+
+func (s *State) RemoveMacroFileFromIndex(path string) {
+	s.DbtMacrosMu.Lock()
+	defer s.DbtMacrosMu.Unlock()
+	s.Logger.Tracef("Removing macro file: %s", path)
+
+	name := filepath.Clean(path)
+	macros := s.DbtMacroFiles[name]
+
+	for _, mac := range macros {
+		s.DbtMacros.Remove(mac)
+	}
+
+	s.DbtMacroFiles[name] = nil
+}
+
+func (s *State) AddNewMacroToIndex(name string, macro dbt.Macro) {
+	s.DbtMacrosMu.Lock()
+	defer s.DbtMacrosMu.Unlock()
+	s.Logger.Tracef("Adding macro: %s, %+v", name, macro)
+	s.DbtMacros.Put(name, macro)
+}
+
+func (s *State) RemoveMacroFromIndex(name string) {
+	s.DbtMacrosMu.Lock()
+	defer s.DbtMacrosMu.Unlock()
+	s.Logger.Tracef("Removing macro: %s", name)
+	s.DbtMacros.Remove(name)
 }

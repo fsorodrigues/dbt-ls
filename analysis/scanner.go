@@ -4,8 +4,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
-
-	"github.com/fsorodrigues/dbt-ls/dbt"
 )
 
 type ScanCallback func(string) error
@@ -93,16 +91,15 @@ func (s *State) FindMacroFilesRecursive(dirPattern string) error {
 		s.DbtMacroExtension,
 	)
 
-	macros, err := s.findFilesRecursive(dirPattern, []string{s.DbtMacroExtension})
+	macroFiles, err := s.findFilesRecursive(dirPattern, []string{s.DbtMacroExtension})
 	if err != nil {
 		s.Logger.Errorf("Error finding macro files recursively: %s", err)
 		return err
 	}
 
-	s.Logger.Debugf("Adding %d macros to state", len(macros))
-	for _, file := range macros {
-		macro := dbt.Macro{File: file}
-		s.AddNewMacroToIndex(file, macro)
+	s.Logger.Debugf("Adding %d macros to state", len(macroFiles))
+	for _, file := range macroFiles {
+		s.AddNewMacroFile(file)
 	}
 
 	return nil
