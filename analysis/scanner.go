@@ -127,11 +127,17 @@ func (s *State) ScanProjectFiles(root string) error {
 	if err := s.FindModelFilesRecursive(root); err != nil {
 		return err
 	}
+	if err := s.FindMacroFilesRecursive(root); err != nil {
+		return err
+	}
 	return s.FindConfigFilesRecursive(root)
 }
 
 func (s *State) ScanRootPath(rootPath string) error {
 	if err := s.ScanModelRoots(rootPath); err != nil {
+		return err
+	}
+	if err := s.ScanMacroRoots(rootPath); err != nil {
 		return err
 	}
 	return s.ScanConfigRoot(rootPath)

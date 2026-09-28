@@ -56,6 +56,8 @@ type State struct {
 	DbtMacros                *trie.Trie[dbt.Macro]
 	DbtMacroFiles            map[string][]string
 	DbtMacroExtension        string
+	macroFileHashes          map[string]string // file path → sha256 of last-processed content
+	macroFileHashesMu        sync.Mutex
 	DbtConfigExtensions      []string
 	ModelRoots               []string
 	MacroRoots               []string
@@ -254,6 +256,7 @@ func NewState(
 		DbtMacros:           macros,
 		DbtMacroFiles:       map[string][]string{},
 		DbtMacroExtension:   ".sql",
+		macroFileHashes:     map[string]string{},
 		DbtConfigExtensions: []string{".yml", ".yaml"},
 		ModelRoots:          []string{"models"},
 		ConfigRoot:          ".",

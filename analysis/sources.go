@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/fsorodrigues/dbt-ls/dbt"
 	"github.com/fsorodrigues/dbt-ls/lsp"
 	trie "github.com/zyedidia/generic/trie"
 	"go.yaml.in/yaml/v4"
@@ -42,6 +43,15 @@ func (s *State) resetProjectState() {
 	s.DbtModelsMu.Lock()
 	s.DbtModels = trie.New[string]()
 	s.DbtModelsMu.Unlock()
+
+	s.DbtMacrosMu.Lock()
+	s.DbtMacros = trie.New[dbt.Macro]()
+	s.DbtMacroFiles = map[string][]string{}
+	s.DbtMacrosMu.Unlock()
+
+	s.macroFileHashesMu.Lock()
+	s.macroFileHashes = map[string]string{}
+	s.macroFileHashesMu.Unlock()
 }
 
 func (s *State) NotifyProject(message string) {
