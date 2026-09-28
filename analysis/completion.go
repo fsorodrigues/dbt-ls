@@ -1,30 +1,27 @@
 package analysis
 
 import (
-	"fmt"
-	"regexp"
 	"strings"
 
+	"github.com/fsorodrigues/dbt-ls/jinja"
 	"github.com/fsorodrigues/dbt-ls/lsp"
 )
 
-type SourceCompletionContext struct {
-	Kind        string
-	SourceName  string
-	TablePrefix string
+func extractModelRefUnderCursor(a string, b lsp.TextDocumentPosition) (string, bool) {
+	return "a", false
 }
 
 func (s *State) createRefResponse(
-	lineContent string,
-	params lsp.CompletionParams,
+	snapshot Snapshot,
+	ctx jinja.Context,
 	response *lsp.CompletionResponse,
 ) {
-	modelRef, check := extractModelRefUnderCursor(lineContent, params.Position)
-	s.Logger.Tracef("Check: %t. Search: %s. Models: %+v", check, modelRef, s.DbtModels)
+	s.Logger.Tracef("Ref search prefix: %s", ctx.Prefix)
+	models := s.DbtModels.KeysWithPrefix(strings.ToLower(ctx.Prefix))
 
-	if check {
-		models := s.DbtModels.KeysWithPrefix(strings.ToLower(modelRef))
-		s.Logger.Tracef("Found: %s", models)
+	if len(models) > 0 {
+		s.Logger.Debugf("Found %d models: %+v", len(models), models)
+
 		for _, modKey := range models {
 			modVal, ok := s.DbtModels.Get(modKey)
 			if !ok {
@@ -36,91 +33,104 @@ func (s *State) createRefResponse(
 				Detail:        "dbt Model",
 				Documentation: modVal,
 				TextEdit: lsp.CompletionTextEdit{
-					Range: lsp.TextDocumentPositionRange{
-						Start: lsp.TextDocumentPosition{
-							Line:      params.Position.Line,
-							Character: params.Position.Character - len(modelRef),
-						},
-						End: params.Position,
-					},
+					Range:   snapshot.Range(ctx.Start, ctx.End),
 					NewText: modKey,
 				},
 			})
 		}
-		s.Logger.Tracef(
+		s.Logger.Debugf(
 			"TextDocumentCodeCompletion (Ref) ready. Contains %d items",
 			len(response.Result.Items),
 		)
 	} else {
-		s.Logger.Tracef("Cannot parse line contents for Ref completion: %s", lineContent)
+		s.Logger.Debugf("No models found for prefix %s", ctx.Prefix)
+		s.Logger.Trace("Context: %+v", ctx)
 	}
 }
 
 func (s *State) createSourceResponse(
-	lineContent string,
-	params lsp.CompletionParams,
+	snapshot Snapshot,
+	ctx jinja.Context,
 	response *lsp.CompletionResponse,
 ) {
-	ctx, check := extractSourceContextUnderCursor(lineContent, params.Position)
-	s.Logger.Tracef("Source context: %+v, check: %t", ctx, check)
-	if !check {
-		s.Logger.Tracef("Cannot parse line contents for Source completion: %s", lineContent)
-		return
+	s.DbtConfigMu.RLock()
+	defer s.DbtConfigMu.RUnlock()
+
+	switch ctx.ArgIndex {
+	case 0:
+		s.Logger.Tracef("Source Name search prefix: %s", ctx.Prefix)
+		s.createSourceNameResponse(snapshot, ctx, response)
+	case 1:
+		s.Logger.Tracef("Source Table search prefix: %s", ctx.Prefix)
+		s.createSourceTableResponse(snapshot, ctx, response)
 	}
+}
 
-	s.DbtConfigMu.Lock()
-	defer s.DbtConfigMu.Unlock()
-
-	switch ctx.Kind {
-	case "source_name":
-		prefix := ctx.SourceName
-		for _, name := range sourceNamesWithPrefix(s.DbtConfig, prefix) {
+// createSourceNameResponse completes the first argument of source(), i.e.
+// the source name, e.g. source('src|').
+func (s *State) createSourceNameResponse(
+	snapshot Snapshot,
+	ctx jinja.Context,
+	response *lsp.CompletionResponse,
+) {
+	sources := sourceNamesWithPrefix(s.DbtConfig, ctx.Prefix)
+	if len(sources) > 0 {
+		s.Logger.Debugf("Found %d sources", len(sources))
+		s.Logger.Tracef("Sources: %+v", sources)
+		for _, name := range sources {
 			response.Result.Items = append(response.Result.Items, lsp.CompletionItem{
 				Label:  name,
 				Kind:   lsp.CompletionItemKindReference,
 				Detail: "dbt Source",
 				TextEdit: lsp.CompletionTextEdit{
-					Range: lsp.TextDocumentPositionRange{
-						Start: lsp.TextDocumentPosition{
-							Line:      params.Position.Line,
-							Character: params.Position.Character - len(prefix),
-						},
-						End: params.Position,
-					},
+					Range:   snapshot.Range(ctx.Start, ctx.End),
 					NewText: name,
 				},
 			})
 		}
-	case "table_name":
-		src := sourceByName(s.DbtConfig, ctx.SourceName)
-		if src == nil {
-			s.Logger.Tracef("No source named %q found for table completion", ctx.SourceName)
-			return
-		}
-		prefix := ctx.TablePrefix
-		for _, tblName := range tableNamesWithPrefix(src, prefix) {
+	} else {
+		s.Logger.Debugf("No sources found for prefix %s", ctx.Prefix)
+	}
+}
+
+// createSourceTableResponse completes the second argument of source(), i.e.
+// the table name, e.g. source('src', 'tbl|'). It resolves the enclosing
+// source from the first argument, captured in ctx.PreviousArgs.
+func (s *State) createSourceTableResponse(
+	snapshot Snapshot,
+	ctx jinja.Context,
+	response *lsp.CompletionResponse,
+) {
+	if len(ctx.PreviousArgs) == 0 || ctx.PreviousArgs[0] == "" {
+		s.Logger.Debugf("No source name available for table completion")
+		return
+	}
+
+	src := sourceByName(s.DbtConfig, ctx.PreviousArgs[0])
+	if src == nil {
+		s.Logger.Debugf("No source named %q found for table completion", ctx.PreviousArgs[0])
+		return
+	}
+
+	tables := tableNamesWithPrefix(src, ctx.Prefix)
+	if len(tables) > 0 {
+		s.Logger.Debugf("Found %d Tables", len(tables))
+		s.Logger.Tracef("Tables: %+v", tables)
+		for _, tblName := range tables {
 			response.Result.Items = append(response.Result.Items, lsp.CompletionItem{
 				Label:  tblName,
 				Kind:   lsp.CompletionItemKindReference,
 				Detail: "dbt Source Table",
 				TextEdit: lsp.CompletionTextEdit{
-					Range: lsp.TextDocumentPositionRange{
-						Start: lsp.TextDocumentPosition{
-							Line:      params.Position.Line,
-							Character: params.Position.Character - len(prefix),
-						},
-						End: params.Position,
-					},
+					Range:   snapshot.Range(ctx.Start, ctx.End),
 					NewText: tblName,
 				},
 			})
 		}
+	} else {
+		s.Logger.Debugf("No tables found for prefix %s", ctx.Prefix)
+		s.Logger.Trace("Context: %+v", ctx)
 	}
-
-	s.Logger.Tracef(
-		"TextDocumentCodeCompletion (Source) ready. Contains %d items",
-		len(response.Result.Items),
-	)
 }
 
 func sourceNamesWithPrefix(cfg DbtConfig, prefix string) []string {
@@ -173,169 +183,29 @@ func (s *State) TextDocumentCodeCompletion(
 		return *response
 	}
 
-	line, ok := s.documentLine(params.TextDocument.URI, params.Position.Line)
+	snap, ok := s.Snapshot(params.TextDocument.URI)
 	if !ok {
 		s.Logger.Errorf("Completion requested for unopened document: %s", params.TextDocument.URI)
 		return *response
 	}
-	completionType, err := parseCompletionType(line)
 
-	if err == nil {
-		s.Logger.Tracef("Completion Type: %s", completionType)
-		switch completionType {
+	cursor := snap.Offset(params.Position)
+	ctx := jinja.Classify(snap.Text, cursor)
+	s.Logger.Tracef("Completion context: %+v", ctx)
+
+	switch ctx.Role {
+	case jinja.RoleStringArg:
+		switch ctx.Callee {
 		case "ref":
-			if !s.IsRefCompletionEnabled() {
-				return *response
+			if s.IsRefCompletionEnabled() {
+				s.createRefResponse(snap, ctx, response)
 			}
-			s.createRefResponse(line, params, response)
 		case "source":
-			if !s.IsSourceCompletionEnabled() {
-				s.Logger.Debugf("Source completion disabled; skipping source completion")
-				return *response
+			if s.IsSourceCompletionEnabled() {
+				s.createSourceResponse(snap, ctx, response)
 			}
-			s.createSourceResponse(line, params, response)
 		}
 	}
 
 	return *response
-}
-
-var (
-	sourceRe = regexp.MustCompile(`\s*\bsource\s*\(`)
-	refRe    = regexp.MustCompile(`\s*\bref\s*\(`)
-)
-
-func parseCompletionType(lineContent string) (string, error) {
-	if sourceRe.MatchString(lineContent) {
-		return "source", nil
-	}
-	if refRe.MatchString(lineContent) {
-		return "ref", nil
-	}
-
-	return "", fmt.Errorf(
-		"Cannot determine what type of completion request this should be. Line %s",
-		lineContent,
-	)
-}
-
-func extractModelRefUnderCursor(
-	lineContent string,
-	position lsp.TextDocumentPosition,
-) (string, bool) {
-	// Group 1: Matches content inside single quotes
-	// Group 2: Matches content inside double quotes
-	re := regexp.MustCompile(`ref\s*\(\s*(?:'([^']+)'|"([^"]+)")\s*\)`)
-	matches := re.FindAllStringSubmatchIndex(lineContent, -1)
-
-	var modelName string
-	foundMatch := false
-
-	// match indices reference:
-	// match[0], match[1]: Start/End of full match
-	// match[2], match[3]: Start/End of group 1 (single quotes, -1 if no match)
-	// match[4], match[5]: Start/End of group 2 (double quotes, -1 if no match)
-	for _, match := range matches {
-		start, end := match[0], match[1]
-
-		// Check if cursor is within the bounds of this ref(...) call
-		if start <= position.Character && position.Character <= end {
-			if match[2] != -1 {
-				modelName = lineContent[match[2]:match[3]]
-			} else if match[4] != -1 {
-				modelName = lineContent[match[4]:match[5]]
-			}
-			foundMatch = true
-			break
-		}
-	}
-
-	return modelName, foundMatch
-}
-
-// extractSourceContextUnderCursor returns the completion context for a
-// source(...) call, determining whether the cursor is positioned on the
-// source-name argument or the table-name argument.
-func extractSourceContextUnderCursor(
-	lineContent string,
-	position lsp.TextDocumentPosition,
-) (SourceCompletionContext, bool) {
-	// Matches: source( <arg1> , <arg2> )
-	// We look for the cursor being inside arg1 (source name) or arg2 (table name).
-	re := regexp.MustCompile(
-		`source\s*\(\s*(?:'([^']*)'|"([^"]*)")\s*(?:,\s*(?:'([^']*)'|"([^"]*)")\s*)?\)`,
-	)
-	matches := re.FindAllStringSubmatchIndex(lineContent, -1)
-
-	for _, match := range matches {
-		fullStart, fullEnd := match[0], match[1]
-		if position.Character < fullStart || position.Character > fullEnd {
-			continue
-		}
-
-		// Determine source name bounds (group 1 single / group 2 double)
-		srcStart, srcEnd := match[2], match[3]
-		if srcStart == -1 {
-			srcStart, srcEnd = match[4], match[5]
-		}
-
-		// Determine table name bounds (group 3 single / group 4 double)
-		tblStart, tblEnd := match[6], match[7]
-		if tblStart == -1 {
-			tblStart, tblEnd = match[8], match[9]
-		}
-
-		if srcStart != -1 && position.Character >= srcStart && position.Character <= srcEnd {
-			return SourceCompletionContext{
-				Kind:       "source_name",
-				SourceName: lineContent[srcStart:position.Character],
-			}, true
-		}
-
-		if tblStart != -1 && position.Character >= tblStart && position.Character <= tblEnd {
-			var srcName string
-			if match[2] != -1 {
-				srcName = lineContent[match[2]:match[3]]
-			} else if match[4] != -1 {
-				srcName = lineContent[match[4]:match[5]]
-			}
-			return SourceCompletionContext{
-				Kind:        "table_name",
-				SourceName:  srcName,
-				TablePrefix: lineContent[tblStart:position.Character],
-			}, true
-		}
-	}
-
-	// Fallback: try partial match (source name not yet closed)
-	rePartial := regexp.MustCompile(`source\s*\(\s*['"]([^'"]*)$`)
-	partialMatch := rePartial.FindStringSubmatchIndex(lineContent[:position.Character])
-	if partialMatch != nil {
-		return SourceCompletionContext{
-			Kind:       "source_name",
-			SourceName: lineContent[partialMatch[2]:position.Character],
-		}, true
-	}
-
-	// Fallback: table name partial (source name closed, comma seen, table not closed)
-	rePartialTable := regexp.MustCompile(
-		`source\s*\(\s*(?:'([^']*)'|"([^"]*)")\s*,\s*['"]([^'"]*)$`,
-	)
-	partialTableMatch := rePartialTable.FindStringSubmatchIndex(lineContent[:position.Character])
-	if partialTableMatch != nil {
-		srcName := ""
-		if partialTableMatch[2] != -1 {
-			srcName = lineContent[partialTableMatch[2]:partialTableMatch[3]]
-		} else if partialTableMatch[4] != -1 {
-			srcName = lineContent[partialTableMatch[4]:partialTableMatch[5]]
-		}
-		tablePrefix := lineContent[partialTableMatch[6]:position.Character]
-		return SourceCompletionContext{
-			Kind:        "table_name",
-			SourceName:  srcName,
-			TablePrefix: tablePrefix,
-		}, true
-	}
-
-	return SourceCompletionContext{}, false
 }

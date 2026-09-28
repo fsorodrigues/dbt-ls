@@ -31,7 +31,7 @@ func WorkspacePath(uri string) (string, error) {
 type State struct {
 	Documents                map[string]*Document
 	DocumentsMu              sync.RWMutex
-	DbtConfigMu              sync.Mutex
+	DbtConfigMu              sync.RWMutex
 	ProjectMu                sync.RWMutex
 	ProjectLifecycleMu       sync.Mutex
 	DbtConfig                DbtConfig
