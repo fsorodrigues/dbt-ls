@@ -1,6 +1,15 @@
 package lsp
 
-const CompletionItemKindReference = 18
+const (
+	CompletionItemKindFunction  = 3
+	CompletionItemKindVariable  = 6
+	CompletionItemKindReference = 18
+)
+
+const (
+	InsertTextFormatPlainText = 1
+	InsertTextFormatSnippet   = 2
+)
 
 type CompletionParams struct {
 	TextDocumentPositionParams
@@ -17,11 +26,15 @@ type CompletionTextEdit struct {
 }
 
 type CompletionItem struct {
-	Label         string             `json:"label"`
-	Detail        string             `json:"detail"`
-	Kind          int                `json:"kind"`
-	Documentation string             `json:"documentation"`
-	TextEdit      CompletionTextEdit `json:"textEdit"`
+	Label            string             `json:"label"`
+	Kind             int                `json:"kind"`
+	Detail           string             `json:"detail,omitempty"`
+	Documentation    string             `json:"documentation,omitempty"`
+	SortText         string             `json:"sortText,omitempty"`
+	FilterText       string             `json:"filterText,omitempty"`
+	InsertText       string             `json:"insertText,omitempty"`
+	InsertTextFormat int                `json:"insertTextFormat,omitempty"`
+	TextEdit         CompletionTextEdit `json:"textEdit"`
 }
 
 type CompletionList struct {
