@@ -1,10 +1,13 @@
 package analysis
 
 import (
+	"fmt"
 	"strings"
 
+	"github.com/fsorodrigues/dbt-ls/dbt"
 	"github.com/fsorodrigues/dbt-ls/jinja"
 	"github.com/fsorodrigues/dbt-ls/lsp"
+	"github.com/fsorodrigues/dbt-ls/utils"
 )
 
 func extractModelRefUnderCursor(a string, b lsp.TextDocumentPosition) (string, bool) {
@@ -63,6 +66,71 @@ func (s *State) createSourceResponse(
 	case 1:
 		s.Logger.Tracef("Source Table search prefix: %s", ctx.Prefix)
 		s.createSourceTableResponse(snapshot, ctx, response)
+	}
+}
+
+func (s *State) createMacroResponse(
+	snapshot Snapshot,
+	ctx jinja.Context,
+	response *lsp.CompletionResponse,
+) {
+	s.Logger.Tracef("Macro search prefix: %s", ctx.Prefix)
+	macros := s.DbtMacros.KeysWithPrefix(strings.ToLower(ctx.Prefix))
+
+	if len(macros) > 0 {
+		s.Logger.Debugf("Found %d macros: %+v", len(macros), macros)
+
+		for _, macKey := range macros {
+			macVal, ok := s.DbtMacros.Get(macKey)
+			if !ok {
+				s.Logger.Error("Error getting value from Trie")
+			}
+			args := ""
+			if len(macVal.Args) > 0 {
+				argNames := utils.Map(
+					macVal.Args,
+					func(v dbt.Arg) string { return v.Name },
+				)
+				args = strings.Join(argNames, ", ")
+			}
+			newText := fmt.Sprintf("%s(%s)", macKey, args)
+			response.Result.Items = append(response.Result.Items, lsp.CompletionItem{
+				Label:            macKey,
+				Kind:             lsp.CompletionItemKindFunction,
+				Detail:           macVal.Signature(),
+				Documentation:    macVal.File,
+				SortText:         macroSortText(macKey),
+				FilterText:       macKey,
+				InsertText:       newText,
+				InsertTextFormat: lsp.InsertTextFormatPlainText,
+				TextEdit: lsp.CompletionTextEdit{
+					Range:   snapshot.Range(ctx.Start, ctx.End),
+					NewText: newText,
+				},
+			})
+		}
+		s.Logger.Debugf(
+			"TextDocumentCodeCompletion (Ref) ready. Contains %d items",
+			len(response.Result.Items),
+		)
+	} else {
+		s.Logger.Debugf("No models found for prefix %s", ctx.Prefix)
+		s.Logger.Trace("Context: %+v", ctx)
+	}
+}
+
+// macroSortText ranks a project's own macros above adapter-dispatch
+// implementations and private-convention names, so `default__foo` /
+// `snowflake__foo` / `_helper` sink to the bottom of the list without being
+// hidden entirely. LSP clients sort lexicographically on this field.
+func macroSortText(name string) string {
+	switch {
+	case strings.HasPrefix(name, "_"):
+		return "3" + name
+	case strings.Contains(name, "__"):
+		return "3" + name
+	default:
+		return "0" + name
 	}
 }
 
@@ -204,6 +272,10 @@ func (s *State) TextDocumentCodeCompletion(
 			if s.IsSourceCompletionEnabled() {
 				s.createSourceResponse(snap, ctx, response)
 			}
+		}
+	case jinja.RoleValue:
+		if s.IsMacrosEnabled() {
+			s.createMacroResponse(snap, ctx, response)
 		}
 	}
 
