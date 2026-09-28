@@ -14,6 +14,12 @@ func extractModelRefUnderCursor(a string, b lsp.TextDocumentPosition) (string, b
 	return "a", false
 }
 
+// maxCompletionItems caps how many candidates we return in one response.
+// When a result set is truncated, IsIncomplete is set so the client knows to
+// re-query as the user keeps typing, instead of filtering a partial list
+// itself.
+const maxCompletionItems = 50
+
 func (s *State) createRefResponse(
 	snapshot Snapshot,
 	ctx jinja.Context,
@@ -21,6 +27,10 @@ func (s *State) createRefResponse(
 ) {
 	s.Logger.Tracef("Ref search prefix: %s", ctx.Prefix)
 	models := s.DbtModels.KeysWithPrefix(strings.ToLower(ctx.Prefix))
+	if len(models) > maxCompletionItems {
+		models = models[:maxCompletionItems]
+		response.Result.IsIncomplete = true
+	}
 
 	if len(models) > 0 {
 		s.Logger.Debugf("Found %d models: %+v", len(models), models)
@@ -76,6 +86,10 @@ func (s *State) createMacroResponse(
 ) {
 	s.Logger.Tracef("Macro search prefix: %s", ctx.Prefix)
 	macros := s.DbtMacros.KeysWithPrefix(strings.ToLower(ctx.Prefix))
+	if len(macros) > maxCompletionItems {
+		macros = macros[:maxCompletionItems]
+		response.Result.IsIncomplete = true
+	}
 
 	if len(macros) > 0 {
 		s.Logger.Debugf("Found %d macros: %+v", len(macros), macros)
@@ -142,6 +156,10 @@ func (s *State) createSourceNameResponse(
 	response *lsp.CompletionResponse,
 ) {
 	sources := sourceNamesWithPrefix(s.DbtConfig, ctx.Prefix)
+	if len(sources) > maxCompletionItems {
+		sources = sources[:maxCompletionItems]
+		response.Result.IsIncomplete = true
+	}
 	if len(sources) > 0 {
 		s.Logger.Debugf("Found %d sources", len(sources))
 		s.Logger.Tracef("Sources: %+v", sources)
@@ -181,6 +199,10 @@ func (s *State) createSourceTableResponse(
 	}
 
 	tables := tableNamesWithPrefix(src, ctx.Prefix)
+	if len(tables) > maxCompletionItems {
+		tables = tables[:maxCompletionItems]
+		response.Result.IsIncomplete = true
+	}
 	if len(tables) > 0 {
 		s.Logger.Debugf("Found %d Tables", len(tables))
 		s.Logger.Tracef("Tables: %+v", tables)
@@ -236,7 +258,7 @@ func NewCompletionResponse(id int) *lsp.CompletionResponse {
 			ID:  &id,
 		},
 		Result: lsp.CompletionList{
-			IsIncomplete: true,
+			IsIncomplete: false,
 			Items:        []lsp.CompletionItem{},
 		},
 	}
