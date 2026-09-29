@@ -10,10 +10,6 @@ import (
 	"github.com/fsorodrigues/dbt-ls/utils"
 )
 
-func extractModelRefUnderCursor(a string, b lsp.TextDocumentPosition) (string, bool) {
-	return "a", false
-}
-
 // maxCompletionItems caps how many candidates we return in one response.
 // When a result set is truncated, IsIncomplete is set so the client knows to
 // re-query as the user keeps typing, instead of filtering a partial list

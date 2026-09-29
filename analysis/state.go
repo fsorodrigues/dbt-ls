@@ -70,10 +70,11 @@ type State struct {
 }
 
 type ServerCapabilitiesStatus struct {
-	SourcesEnabled     bool
-	RefsEnabled        bool
-	MacrosEnabled      bool
-	DefinitionsEnabled bool
+	SourcesEnabled               bool
+	RefsEnabled                  bool
+	RefsGoToDefinitionsEnabled   bool
+	MacrosEnabled                bool
+	MacrosGoToDefinitionsEnabled bool
 }
 
 func (s *State) IsServerActive() bool {
@@ -101,9 +102,10 @@ func (s *State) setSourcesEnabled(enabled bool) {
 func (s *State) enableProjectCapabilities(sourcesEnabled bool) {
 	s.ProjectMu.Lock()
 	s.ServerCapabilitiesStatus = ServerCapabilitiesStatus{
-		SourcesEnabled:     sourcesEnabled,
-		RefsEnabled:        true,
-		DefinitionsEnabled: true,
+		SourcesEnabled:               sourcesEnabled,
+		RefsEnabled:                  true,
+		RefsGoToDefinitionsEnabled:   true,
+		MacrosGoToDefinitionsEnabled: true,
 	}
 	s.ProjectMu.Unlock()
 }
@@ -120,10 +122,16 @@ func (s *State) setMacrosEnabled(enabled bool) {
 	s.ServerCapabilitiesStatus.MacrosEnabled = enabled
 }
 
-func (s *State) setDefinitionsEnabled(enabled bool) {
+func (s *State) setRefsDefinitionsEnabled(enabled bool) {
 	s.ProjectMu.Lock()
 	defer s.ProjectMu.Unlock()
-	s.ServerCapabilitiesStatus.DefinitionsEnabled = enabled
+	s.ServerCapabilitiesStatus.RefsGoToDefinitionsEnabled = enabled
+}
+
+func (s *State) setMacrosDefinitionsEnabled(enabled bool) {
+	s.ProjectMu.Lock()
+	defer s.ProjectMu.Unlock()
+	s.ServerCapabilitiesStatus.MacrosGoToDefinitionsEnabled = enabled
 }
 
 func (s *State) disableProjectCapabilities() {
@@ -148,10 +156,16 @@ func (s *State) IsMacrosEnabled() bool {
 	return s.ServerActive && s.ServerCapabilitiesStatus.MacrosEnabled
 }
 
-func (s *State) IsDefinitionEnabled() bool {
+func (s *State) IsRefDefinitionEnabled() bool {
 	s.ProjectMu.RLock()
 	defer s.ProjectMu.RUnlock()
-	return s.ServerActive && s.ServerCapabilitiesStatus.DefinitionsEnabled
+	return s.ServerActive && s.ServerCapabilitiesStatus.RefsGoToDefinitionsEnabled
+}
+
+func (s *State) IsMacrosDefinitionEnabled() bool {
+	s.ProjectMu.RLock()
+	defer s.ProjectMu.RUnlock()
+	return s.ServerActive && s.ServerCapabilitiesStatus.MacrosGoToDefinitionsEnabled
 }
 
 func (s *State) SetProjectRoot(root string) {
@@ -191,7 +205,7 @@ func (s *State) SetModelRoots(path []string) error {
 	for _, root := range path {
 		if err := pathExists(filepath.Join(s.ProjectRoot, root)); err != nil {
 			s.ServerCapabilitiesStatus.RefsEnabled = false
-			s.ServerCapabilitiesStatus.DefinitionsEnabled = false
+			s.ServerCapabilitiesStatus.RefsGoToDefinitionsEnabled = false
 			return fmt.Errorf("model root %q: %w", root, err)
 		}
 	}
@@ -241,9 +255,9 @@ func NewState(
 		Documents:    map[string]*Document{},
 		ServerActive: false,
 		ServerCapabilitiesStatus: ServerCapabilitiesStatus{
-			SourcesEnabled:     false,
-			RefsEnabled:        false,
-			DefinitionsEnabled: false,
+			SourcesEnabled:             false,
+			RefsEnabled:                false,
+			RefsGoToDefinitionsEnabled: false,
 		},
 		SourceFileErrors:    map[string][]sourceFileError{},
 		NotifCh:             make(chan lsp.ShowMessageParams, 16),
