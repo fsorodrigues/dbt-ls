@@ -18,7 +18,7 @@ func TestNewStateDisablesCapabilities(t *testing.T) {
 	if s.IsSourceCompletionEnabled() {
 		t.Fatal("new state source completion enabled")
 	}
-	if s.IsDefinitionEnabled() {
+	if s.IsRefDefinitionEnabled() {
 		t.Fatal("new state definition enabled")
 	}
 }
@@ -50,7 +50,7 @@ func TestActivateProjectEnablesCapabilities(t *testing.T) {
 	if !s.IsSourceCompletionEnabled() {
 		t.Fatal("source completion disabled after project activation")
 	}
-	if !s.IsDefinitionEnabled() {
+	if !s.IsRefDefinitionEnabled() {
 		t.Fatal("definition disabled after project activation")
 	}
 }
@@ -69,7 +69,7 @@ func TestInvalidModelRootDisablesModelCapabilitiesOnly(t *testing.T) {
 	if !s.IsServerActive() {
 		t.Fatal("invalid model root deactivated server")
 	}
-	if s.IsRefCompletionEnabled() || s.IsDefinitionEnabled() {
+	if s.IsRefCompletionEnabled() || s.IsRefDefinitionEnabled() {
 		t.Fatal("model capabilities enabled with invalid model root")
 	}
 	if !s.IsMacrosEnabled() {
@@ -91,7 +91,7 @@ func TestInvalidMacroRootDisablesMacroCapabilityOnly(t *testing.T) {
 	if !s.IsServerActive() {
 		t.Fatal("invalid macro root deactivated server")
 	}
-	if !s.IsRefCompletionEnabled() || !s.IsDefinitionEnabled() {
+	if !s.IsRefCompletionEnabled() || !s.IsRefDefinitionEnabled() {
 		t.Fatal("model capabilities disabled by invalid macro root")
 	}
 	if s.IsMacrosEnabled() {
@@ -114,7 +114,7 @@ func TestSourceConflictDisablesOnlySourceCompletion(t *testing.T) {
 	if !s.IsRefCompletionEnabled() {
 		t.Fatal("source conflict disabled ref completion")
 	}
-	if !s.IsDefinitionEnabled() {
+	if !s.IsRefDefinitionEnabled() {
 		t.Fatal("source conflict disabled definition")
 	}
 }
@@ -123,7 +123,7 @@ func TestDisableProjectCapabilitiesRequiresServerActive(t *testing.T) {
 	s := newTestState()
 	s.enableProjectCapabilities(true)
 
-	if s.IsRefCompletionEnabled() || s.IsSourceCompletionEnabled() || s.IsDefinitionEnabled() {
+	if s.IsRefCompletionEnabled() || s.IsSourceCompletionEnabled() || s.IsRefDefinitionEnabled() {
 		t.Fatal("capability getter ignored inactive server")
 	}
 }

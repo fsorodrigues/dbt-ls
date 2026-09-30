@@ -93,11 +93,11 @@ func (s *State) activateProject(root string, project DbtProject) error {
 		activationErr = err
 	} else if err := s.ScanModelRoots(root); err != nil {
 		s.setRefsEnabled(false)
-		s.setDefinitionsEnabled(false)
+		s.setRefsDefinitionsEnabled(false)
 		activationErr = err
 	} else {
 		s.setRefsEnabled(true)
-		s.setDefinitionsEnabled(true)
+		s.setRefsDefinitionsEnabled(true)
 	}
 
 	if err := s.SetMacroRoots(project.MacroPaths); err != nil {
@@ -105,8 +105,13 @@ func (s *State) activateProject(root string, project DbtProject) error {
 		if activationErr == nil {
 			activationErr = err
 		}
+	} else if err := s.ScanMacroRoots(root); err != nil {
+		s.setMacrosEnabled(false)
+		s.setMacrosDefinitionsEnabled(false)
+		activationErr = err
 	} else {
 		s.setMacrosEnabled(true)
+		s.setMacrosDefinitionsEnabled(true)
 	}
 
 	if err := s.ScanConfigRoot(root); err != nil {

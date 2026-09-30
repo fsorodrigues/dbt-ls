@@ -30,7 +30,7 @@ type (
 	}
 
 	CompletionProviderCapability struct {
-		TriggerCharacters []rune `json:"triggerCharacters"`
+		TriggerCharacters []string `json:"triggerCharacters"`
 	}
 
 	DefinitionClientCapability struct {
@@ -73,7 +73,7 @@ func NewInitializeResponse(id int) InitializeResponse {
 					Change:    TextDocumentSyncKindIncremental,
 				},
 				CompletionProvider: CompletionProviderCapability{
-					TriggerCharacters: []rune("."),
+					TriggerCharacters: []string{"{", "%", ".", "(", "'", "\"", "|"},
 				},
 				DefinitionProvider: DefinitionClientCapability{
 					WorkDoneProgress: false,

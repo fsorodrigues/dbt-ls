@@ -75,9 +75,14 @@ func (s *State) handleCreateEvent(path string) {
 		s.ProcessNewConfigYaml(path)
 		return
 	}
-	if s.isModelFile(base) {
+	if s.isModelFile(path) {
 		s.Logger.Tracef("[WatchProject]: Found new model file %s", path)
 		s.AddNewModelToIndex(path)
+		return
+	}
+	if s.isMacroFile(path) {
+		s.Logger.Tracef("[WatchProject]: Found new macro file %s", path)
+		s.AddNewMacroFile(path)
 		return
 	}
 
@@ -140,9 +145,12 @@ func (s *State) WatchProject(ctx context.Context) {
 				if s.isConfigFile(base) {
 					s.Logger.Tracef("[WatchProject]: Config Deletion event: %s", event.Name)
 					s.RemoveConfigYaml(event.Name)
-				} else if s.isModelFile(base) {
+				} else if s.isModelFile(event.Name) {
 					s.Logger.Tracef("[WatchProject]: Model Deletion event: %s", event.Name)
 					s.RemoveModelFromIndex(event.Name)
+				} else if s.isMacroFile(event.Name) {
+					s.Logger.Tracef("[WatchProject]: Macro Deletion Event %s", event.Name)
+					s.RemoveMacroFileFromIndex(event.Name)
 				}
 			}
 
@@ -150,10 +158,13 @@ func (s *State) WatchProject(ctx context.Context) {
 				if s.isConfigFile(base) {
 					s.Logger.Tracef("[WatchProject]: Config Write event: %s", event.Name)
 					s.ProcessNewConfigYaml(event.Name)
-				} else if s.isModelFile(base) {
+				} else if s.isModelFile(event.Name) {
 					s.Logger.Tracef("[WatchProject]: Model Write event: %s", event.Name)
 					// do nothing
 					continue
+				} else if s.isMacroFile(event.Name) {
+					s.Logger.Tracef("[WatchProject]: Macro Write event: %s", event.Name)
+					s.AddNewMacroFile(event.Name)
 				}
 			}
 
@@ -162,9 +173,12 @@ func (s *State) WatchProject(ctx context.Context) {
 					s.Logger.Tracef("[WatchProject]: Config Renaming Event %s", event.Name)
 					// handle case
 					s.RemoveConfigYaml(event.Name)
-				} else if s.isModelFile(base) {
+				} else if s.isModelFile(event.Name) {
 					s.Logger.Tracef("[WatchProject]: Model Renaming Event %s", event.Name)
 					s.RemoveModelFromIndex(event.Name)
+				} else if s.isMacroFile(event.Name) {
+					s.Logger.Tracef("[WatchProject]: Macro Renaming Event %s", event.Name)
+					s.RemoveMacroFileFromIndex(event.Name)
 				}
 			}
 
