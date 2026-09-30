@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/fsorodrigues/dbt-ls/dbt"
@@ -80,53 +81,124 @@ func (s *State) createMacroResponse(
 	ctx jinja.Context,
 	response *lsp.CompletionResponse,
 ) {
+	prefix := strings.ToLower(ctx.Prefix)
 	s.Logger.Tracef("Macro search prefix: %s", ctx.Prefix)
-	macros := s.DbtMacros.KeysWithPrefix(strings.ToLower(ctx.Prefix))
-	if len(macros) > maxCompletionItems {
-		macros = macros[:maxCompletionItems]
+
+	items, projectNames := s.projectMacroCompletionItems(snapshot, ctx, prefix)
+	items = append(
+		items,
+		builtinMacroCompletionItems(snapshot, ctx, prefix, projectNames)...,
+	)
+
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].SortText == items[j].SortText {
+			return items[i].Label < items[j].Label
+		}
+		return items[i].SortText < items[j].SortText
+	})
+
+	if len(items) > maxCompletionItems {
+		items = items[:maxCompletionItems]
 		response.Result.IsIncomplete = true
 	}
 
-	if len(macros) > 0 {
-		s.Logger.Debugf("Found %d macros: %+v", len(macros), macros)
+	response.Result.Items = append(response.Result.Items, items...)
 
-		for _, macKey := range macros {
-			macVal, ok := s.DbtMacros.Get(macKey)
-			if !ok {
-				s.Logger.Error("Error getting value from Trie")
-			}
-			args := ""
-			if len(macVal.Args) > 0 {
-				argNames := utils.Map(
-					macVal.Args,
-					func(v dbt.Arg) string { return v.Name },
-				)
-				args = strings.Join(argNames, ", ")
-			}
-			newText := fmt.Sprintf("%s(%s)", macKey, args)
-			response.Result.Items = append(response.Result.Items, lsp.CompletionItem{
-				Label:            macKey,
-				Kind:             lsp.CompletionItemKindFunction,
-				Detail:           macVal.Signature(),
-				Documentation:    macVal.File,
-				SortText:         macroSortText(macKey),
-				FilterText:       macKey,
-				InsertText:       newText,
-				InsertTextFormat: lsp.InsertTextFormatPlainText,
-				TextEdit: lsp.CompletionTextEdit{
-					Range:   snapshot.Range(ctx.Start, ctx.End),
-					NewText: newText,
-				},
-			})
+	s.Logger.Debugf(
+		"Macro completion ready. Contains %d items",
+		len(response.Result.Items),
+	)
+}
+
+// projectMacroCompletionItems builds completion items for macros declared in
+// the project, inserting a call with argument names. It also returns the set
+// of lower-cased macro names found, so builtinMacroCompletionItems can skip
+// names the project has overridden.
+func (s *State) projectMacroCompletionItems(
+	snapshot Snapshot,
+	ctx jinja.Context,
+	prefix string,
+) ([]lsp.CompletionItem, map[string]struct{}) {
+	s.DbtMacrosMu.Lock()
+	defer s.DbtMacrosMu.Unlock()
+
+	keys := s.DbtMacros.KeysWithPrefix(prefix)
+	items := make([]lsp.CompletionItem, 0, len(keys))
+	names := make(map[string]struct{}, len(keys))
+
+	for _, macKey := range keys {
+		macVal, ok := s.DbtMacros.Get(macKey)
+		if !ok {
+			s.Logger.Errorf("Could not get macro %q from trie", macKey)
+			continue
 		}
-		s.Logger.Debugf(
-			"TextDocumentCodeCompletion (Ref) ready. Contains %d items",
-			len(response.Result.Items),
-		)
-	} else {
-		s.Logger.Debugf("No models found for prefix %s", ctx.Prefix)
-		s.Logger.Trace("Context: %+v", ctx)
+
+		names[strings.ToLower(macKey)] = struct{}{}
+
+		args := ""
+		if len(macVal.Args) > 0 {
+			argNames := utils.Map(
+				macVal.Args,
+				func(v dbt.Arg) string { return v.Name },
+			)
+			args = strings.Join(argNames, ", ")
+		}
+
+		newText := fmt.Sprintf("%s(%s)", macKey, args)
+		items = append(items, lsp.CompletionItem{
+			Label:            macKey,
+			Kind:             lsp.CompletionItemKindFunction,
+			Detail:           macVal.Signature(),
+			Documentation:    macVal.File,
+			SortText:         macroSortText(macKey),
+			FilterText:       macKey,
+			InsertText:       newText,
+			InsertTextFormat: lsp.InsertTextFormatPlainText,
+			TextEdit: lsp.CompletionTextEdit{
+				Range:   snapshot.Range(ctx.Start, ctx.End),
+				NewText: newText,
+			},
+		})
 	}
+
+	return items, names
+}
+
+// builtinMacroCompletionItems builds completion items for dbt's built-in
+// Jinja context members matching prefix, skipping any name the project has
+// already declared. Built-ins insert only their bare name: some are values
+// rather than callables, so an argument placeholder would not be valid.
+func builtinMacroCompletionItems(
+	snapshot Snapshot,
+	ctx jinja.Context,
+	prefix string,
+	projectNames map[string]struct{},
+) []lsp.CompletionItem {
+	builtins := dbt.BuiltinsWithPrefix(prefix)
+	items := make([]lsp.CompletionItem, 0, len(builtins))
+
+	for _, builtin := range builtins {
+		if _, exists := projectNames[strings.ToLower(builtin.Name)]; exists {
+			continue
+		}
+
+		items = append(items, lsp.CompletionItem{
+			Label:            builtin.Name,
+			Kind:             lsp.CompletionItemKindFunction,
+			Detail:           builtin.Signature(),
+			Documentation:    builtin.Doc,
+			SortText:         "1" + builtin.Name,
+			FilterText:       builtin.Name,
+			InsertText:       builtin.Name,
+			InsertTextFormat: lsp.InsertTextFormatPlainText,
+			TextEdit: lsp.CompletionTextEdit{
+				Range:   snapshot.Range(ctx.Start, ctx.End),
+				NewText: builtin.Name,
+			},
+		})
+	}
+
+	return items
 }
 
 // macroSortText ranks a project's own macros above adapter-dispatch

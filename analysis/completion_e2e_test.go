@@ -78,6 +78,19 @@ func TestTextDocumentCodeCompletionMacros(t *testing.T) {
 	}
 }
 
+func TestTextDocumentCodeCompletionBuiltins(t *testing.T) {
+	s := newCompletionTestState()
+
+	resp := requestCompletion(t, s, "{{ re|")
+
+	if !containsLabel(resp.Result.Items, "ref") {
+		t.Errorf("expected ref in completions, got %v", labelsOf(resp.Result.Items))
+	}
+	if !containsLabel(resp.Result.Items, "return") {
+		t.Errorf("expected return in completions, got %v", labelsOf(resp.Result.Items))
+	}
+}
+
 func TestTextDocumentCodeCompletionRefs(t *testing.T) {
 	s := newCompletionTestState()
 	s.DbtModels.Put("orders", "/models/orders.sql")
