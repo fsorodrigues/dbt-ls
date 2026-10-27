@@ -41,6 +41,11 @@ var methodHandlers = map[string]methodHandler{
 		handle:     handleDidChange,
 		stateful:   true,
 	},
+	"textDocument/didClose": {
+		newMessage: func() lsp.ClientMessage { return &lsp.DidCloseTextDocumentNotification{} },
+		handle:     handleDidClose,
+		stateful:   false,
+	},
 	"textDocument/willSave": {
 		newMessage: func() lsp.ClientMessage { return &lsp.WillSaveTextDocumentNotification{} },
 		handle:     handleWillSave,
