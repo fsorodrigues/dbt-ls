@@ -31,6 +31,15 @@ func (s *State) OpenDocument(uri, text string, version int) {
 	}
 }
 
+func (s *State) CloseDocument(uri string) {
+	s.Logger.Infof("Document %s closed", uri)
+
+	s.DocumentsMu.Lock()
+	defer s.DocumentsMu.Unlock()
+
+	delete(s.Documents, uri)
+}
+
 func (s *State) applyInsertion(
 	doc *Document,
 	offset int,

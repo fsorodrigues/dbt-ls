@@ -127,6 +127,16 @@ func handleDidChange(s *Server, state *analysis.State, raw lsp.ClientMessage, co
 	}
 }
 
+func handleDidClose(s *Server, state *analysis.State, raw lsp.ClientMessage, contents []byte) {
+	if !state.IsServerActive() {
+		return
+	}
+
+	msgIn := raw.(*lsp.DidCloseTextDocumentNotification)
+	s.Logger.Debugf("DidCloseTextDocumentNotification. %s", msgIn.Params.TextDocument.URI)
+	state.CloseDocument(msgIn.Params.TextDocument.URI)
+}
+
 func handleWillSave(s *Server, state *analysis.State, raw lsp.ClientMessage, _ []byte) {
 	if !state.IsServerActive() {
 		return
